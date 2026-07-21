@@ -173,17 +173,6 @@ function debounce(fn, delay = 300) {
     };
 }
 
-function throttle(fn, limit = 1000) {
-    let inThrottle = false;
-    return (...args) => {
-        if (!inThrottle) {
-            fn(...args);
-            inThrottle = true;
-            setTimeout(() => inThrottle = false, limit);
-        }
-    };
-}
-
 // ============================================
 // TOAST NOTIFICATIONS
 // ============================================
@@ -256,7 +245,7 @@ function updateUI() {
         `;
         elements.authBtn.className = 'btn btn-primary';
     }
-    updateBackupButton();
+    updateAdminButtons();
 }
 
 // ============================================
@@ -1365,10 +1354,132 @@ elements.chatInput.addEventListener('keypress', (e) => {
 });
 
 // ============================================
+// DOWNLOAD DB FUNCTIONS
+// ============================================
+
+// Tải DB trực tiếp về máy
+async function downloadDatabase() {
+    if (!currentUser) {
+        showToast('Vui lòng đăng nhập để tải DB', 'error');
+        return;
+    }
+    
+    if (!['owner', 'admin'].includes(currentUser.role)) {
+        showToast('Chỉ Owner và Admin mới có quyền tải DB', 'error');
+        return;
+    }
+    
+    openModal('📥 Tải Database', `
+        <div style="margin-bottom: 16px;">
+            <div style="background: #e8f5e9; padding: 12px; border-radius: 8px; border-left: 4px solid #4caf50; margin-bottom: 16px;">
+                <strong>📌 Hướng dẫn:</strong>
+                <ul style="margin: 8px 0 0 0; padding-left: 20px; font-size: 0.9rem;">
+                    <li>Nhập mật khẩu để tải file DB</li>
+                    <li>File sẽ được tải xuống thư mục <strong>Downloads</strong></li>
+                    <li>File bao gồm: API, Users, Bots, Monitors, Jobs</li>
+                </ul>
+            </div>
+            
+            <div class="form-group">
+                <label>🔑 Mật khẩu <span style="color: var(--danger);">*</span></label>
+                <input type="password" id="downloadDbPassword" placeholder="Nhập mật khẩu" style="font-size: 1.1rem; padding: 12px;">
+                <small style="color: var(--text-muted);">Mật khẩu mặc định: <strong>hoitatsuya@.,123</strong></small>
+            </div>
+            
+            <div id="downloadDbStatus" style="margin-top: 12px; padding: 10px; border-radius: 8px; display: none; text-align: center;">
+                <i class="fas fa-spinner fa-spin"></i> Đang tạo file...
+            </div>
+            
+            <div class="form-actions" style="margin-top: 16px;">
+                <button onclick="closeModal()" class="btn btn-danger">Hủy</button>
+                <button onclick="confirmDownloadDb()" class="btn btn-success" style="flex: 2;">
+                    <i class="fas fa-download"></i> Tải DB ngay
+                </button>
+            </div>
+        </div>
+    `);
+    
+    const statusDiv = document.getElementById('downloadDbStatus');
+    if (statusDiv) {
+        statusDiv.style.display = 'none';
+        statusDiv.innerHTML = '';
+    }
+}
+
+// Xác nhận tải DB
+async function confirmDownloadDb() {
+    const password = document.getElementById('downloadDbPassword').value.trim();
+    
+    if (!password) {
+        showToast('Vui lòng nhập mật khẩu', 'error');
+        return;
+    }
+    
+    const statusDiv = document.getElementById('downloadDbStatus');
+    if (statusDiv) {
+        statusDiv.style.display = 'block';
+        statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang tạo file backup...';
+        statusDiv.style.background = 'var(--bg-secondary)';
+        statusDiv.style.color = 'var(--text-primary)';
+    }
+    
+    try {
+        const data = await apiFetch('/backup/download', {
+            method: 'POST',
+            body: JSON.stringify({ password })
+        });
+        
+        if (data.err) {
+            showToast(data.err, 'error');
+            if (statusDiv) {
+                statusDiv.innerHTML = `<i class="fas fa-exclamation-circle" style="color: var(--danger);"></i> Lỗi: ${data.err}`;
+                statusDiv.style.background = '#ffebee';
+                statusDiv.style.color = '#c62828';
+            }
+            return;
+        }
+        
+        const blob = new Blob([data.backup], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const filename = `database_${new Date(data.timestamp).toISOString().slice(0,10)}.json`;
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        if (statusDiv) {
+            statusDiv.innerHTML = `
+                <i class="fas fa-check-circle" style="color: var(--success);"></i>
+                ✅ Tải thành công!<br>
+                <span style="font-size: 0.85rem;">File: ${filename} (${(data.size / 1024).toFixed(2)} KB)</span>
+            `;
+            statusDiv.style.background = '#e8f5e9';
+            statusDiv.style.color = '#2e7d32';
+        }
+        
+        showToast(`✅ Đã tải DB: ${filename}`, 'success');
+        
+        setTimeout(() => {
+            closeModal();
+        }, 2000);
+        
+    } catch (e) {
+        showToast('Lỗi tải DB: ' + e.message, 'error');
+        if (statusDiv) {
+            statusDiv.innerHTML = `<i class="fas fa-exclamation-circle" style="color: var(--danger);"></i> Lỗi: ${e.message}`;
+            statusDiv.style.background = '#ffebee';
+            statusDiv.style.color = '#c62828';
+        }
+    }
+}
+
+// ============================================
 // BACKUP FUNCTIONS
 // ============================================
 
-// Hiển thị modal backup
 async function showBackupModal() {
     if (!currentUser) {
         showToast('Vui lòng đăng nhập để sử dụng tính năng backup', 'error');
@@ -1397,7 +1508,7 @@ async function showBackupModal() {
             
             <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px;">
                 <button onclick="downloadBackup()" class="btn btn-success" style="flex: 1;">
-                    <i class="fas fa-download"></i> Tải backup
+                    <i class="fas fa-download"></i> Tải backup về máy
                 </button>
                 <button onclick="saveBackupLocal()" class="btn btn-primary" style="flex: 1;">
                     <i class="fas fa-save"></i> Lưu vào server
@@ -1410,6 +1521,9 @@ async function showBackupModal() {
                 <button onclick="showRestoreModal()" class="btn btn-warning" style="flex: 1;">
                     <i class="fas fa-upload"></i> Restore từ file
                 </button>
+                <button onclick="viewServerBackups()" class="btn btn-info" style="flex: 1;">
+                    <i class="fas fa-folder"></i> Xem backup trên server
+                </button>
             </div>
         </div>
     `);
@@ -1417,7 +1531,6 @@ async function showBackupModal() {
     loadBackupStats();
 }
 
-// Load backup stats
 async function loadBackupStats() {
     try {
         const data = await apiFetch('/backup/info');
@@ -1438,7 +1551,6 @@ async function loadBackupStats() {
     }
 }
 
-// Download backup
 async function downloadBackup() {
     const password = document.getElementById('backupPassword').value.trim();
     
@@ -1467,8 +1579,9 @@ async function downloadBackup() {
         const blob = new Blob([data.backup], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
+        const filename = `backup_${new Date(data.timestamp).toISOString().slice(0,10)}.json`;
         a.href = url;
-        a.download = `backup_${new Date(data.timestamp).toISOString().slice(0,10)}.json`;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -1482,12 +1595,11 @@ async function downloadBackup() {
         const btn = document.querySelector('.btn-success');
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-download"></i> Tải backup';
+            btn.innerHTML = '<i class="fas fa-download"></i> Tải backup về máy';
         }
     }
 }
 
-// Save backup to server
 async function saveBackupLocal() {
     const password = document.getElementById('backupPassword').value.trim();
     
@@ -1526,7 +1638,6 @@ async function saveBackupLocal() {
     }
 }
 
-// Show restore modal
 function showRestoreModal() {
     const password = document.getElementById('backupPassword').value.trim();
     
@@ -1563,7 +1674,6 @@ function showRestoreModal() {
     `);
 }
 
-// Restore backup
 async function restoreBackup() {
     const fileInput = document.getElementById('restoreFile');
     const password = document.getElementById('restorePassword').value.trim();
@@ -1629,21 +1739,146 @@ async function restoreBackup() {
     }
 }
 
+async function viewServerBackups() {
+    try {
+        const data = await apiFetch('/backup/list');
+        if (data.err) {
+            showToast(data.err, 'error');
+            return;
+        }
+        
+        if (!data.files || data.files.length === 0) {
+            showToast('Chưa có file backup nào trên server', 'info');
+            return;
+        }
+        
+        let filesHtml = data.files.map(f => `
+            <div style="display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border-color); align-items: center;">
+                <div>
+                    <div style="font-weight: 500;">${escapeHtml(f.name)}</div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">
+                        ${(f.size / 1024).toFixed(2)} KB • ${new Date(f.modified).toLocaleString('vi-VN')}
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button onclick="downloadServerBackup('${escapeHtml(f.name)}')" class="btn btn-info btn-sm">
+                        <i class="fas fa-download"></i>
+                    </button>
+                    <button onclick="deleteServerBackup('${escapeHtml(f.name)}')" class="btn btn-danger btn-sm">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+        
+        openModal('📁 Danh sách backup trên server', `
+            <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px;">
+                ${filesHtml}
+            </div>
+            <div style="margin-top: 16px; display: flex; gap: 12px;">
+                <button onclick="closeModal()" class="btn btn-primary">Đóng</button>
+                <button onclick="refreshBackupList()" class="btn btn-info">
+                    <i class="fas fa-sync"></i> Làm mới
+                </button>
+            </div>
+            <div style="margin-top: 12px; padding: 8px; background: var(--bg-secondary); border-radius: 8px; font-size: 0.85rem; color: var(--text-muted);">
+                📁 Đường dẫn: <strong>/tmp/</strong>
+            </div>
+        `);
+    } catch (e) {
+        showToast('Lỗi tải danh sách backup: ' + e.message, 'error');
+    }
+}
+
+async function downloadServerBackup(filename) {
+    try {
+        const password = document.getElementById('backupPassword')?.value?.trim() || prompt('Nhập mật khẩu backup:');
+        
+        if (!password) {
+            showToast('Vui lòng nhập mật khẩu backup', 'error');
+            return;
+        }
+        
+        const data = await apiFetch('/backup/download-server', {
+            method: 'POST',
+            body: JSON.stringify({ password, filename })
+        });
+        
+        if (data.err) {
+            showToast(data.err, 'error');
+            return;
+        }
+        
+        const blob = new Blob([data.backup], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showToast(`✅ Đã tải xuống: ${filename}`, 'success');
+    } catch (e) {
+        showToast('Lỗi tải backup: ' + e.message, 'error');
+    }
+}
+
+async function deleteServerBackup(filename) {
+    if (!confirm(`Bạn có chắc muốn xóa file ${filename}?`)) return;
+    
+    try {
+        const password = document.getElementById('backupPassword')?.value?.trim() || prompt('Nhập mật khẩu backup:');
+        
+        if (!password) {
+            showToast('Vui lòng nhập mật khẩu backup', 'error');
+            return;
+        }
+        
+        const data = await apiFetch('/backup/delete', {
+            method: 'POST',
+            body: JSON.stringify({ password, filename })
+        });
+        
+        if (data.err) {
+            showToast(data.err, 'error');
+            return;
+        }
+        
+        showToast(`✅ Đã xóa: ${filename}`, 'success');
+        viewServerBackups();
+    } catch (e) {
+        showToast('Lỗi xóa backup: ' + e.message, 'error');
+    }
+}
+
+async function refreshBackupList() {
+    await viewServerBackups();
+}
+
 // ============================================
-// BACKUP BUTTON HANDLER
+// ADMIN BUTTONS
 // ============================================
+const downloadDbBtn = document.getElementById('downloadDbBtn');
 const backupBtn = document.getElementById('backupBtn');
+
+if (downloadDbBtn) {
+    downloadDbBtn.addEventListener('click', downloadDatabase);
+}
+
 if (backupBtn) {
     backupBtn.addEventListener('click', showBackupModal);
 }
 
-function updateBackupButton() {
+function updateAdminButtons() {
+    const isAdmin = currentUser && ['owner', 'admin'].includes(currentUser.role);
+    
+    if (downloadDbBtn) {
+        downloadDbBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+    }
     if (backupBtn) {
-        if (currentUser && ['owner', 'admin'].includes(currentUser.role)) {
-            backupBtn.style.display = 'inline-flex';
-        } else {
-            backupBtn.style.display = 'none';
-        }
+        backupBtn.style.display = isAdmin ? 'inline-flex' : 'none';
     }
 }
 
