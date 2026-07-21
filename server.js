@@ -18,9 +18,9 @@ const path = require("path")
 // ============================================
 const config = {
     port: process.env.PORT || 3000,
-    ownerToken: process.env.OWNER_TOKEN,
-    githubToken: process.env.GITHUB_TOKEN,
-    githubRepo: process.env.GITHUB_REPO,
+    ownerToken: process.env.OWNER_TOKEN || "admin123",
+    githubToken: process.env.GITHUB_TOKEN || "",
+    githubRepo: process.env.GITHUB_REPO || "",
     githubBranch: process.env.GITHUB_BRANCH || "main",
     encryptionKey: process.env.ENCRYPTION_KEY || "",
     maxChatMessages: 300,
@@ -35,10 +35,6 @@ const config = {
     botDbBackupPath: "db_bots.backup.json"
 }
 
-// Validate required config
-if (!config.ownerToken) throw new Error("Missing OWNER_TOKEN")
-if (!config.githubToken || !config.githubRepo) throw new Error("Missing GITHUB config")
-
 // ============================================
 // DATABASE CLASS
 // ============================================
@@ -49,10 +45,10 @@ class Database {
         this.writeQueue = Promise.resolve()
         this.pendingWrite = false
         this.saveTimeout = null
-        this.localDbPath = "/tmp/db_local.json"
+        this.localDbPath = path.join(__dirname, "db_local.json")
+        this.branchVerified = false
     }
 
-    // Encryption
     encrypt(text) {
         if (!config.encryptionKey) return text
         const key = crypto.createHash("sha256").update(config.encryptionKey).digest()
@@ -79,8 +75,8 @@ class Database {
         }
     }
 
-    // GitHub operations
     async fetchFile(filePath) {
+        if (!config.githubToken || !config.githubRepo) return null
         const url = `https://api.github.com/repos/${config.githubRepo}/contents/${filePath}?ref=${config.githubBranch}`
         const res = await fetch(url, {
             headers: {
@@ -95,6 +91,7 @@ class Database {
     }
 
     async getFileSha(filePath) {
+        if (!config.githubToken || !config.githubRepo) return null
         try {
             const url = `https://api.github.com/repos/${config.githubRepo}/contents/${filePath}?ref=${config.githubBranch}`
             const res = await fetch(url, {
@@ -111,6 +108,7 @@ class Database {
     }
 
     async initEmptyRepo() {
+        if (!config.githubToken || !config.githubRepo) return
         const baseUrl = `https://api.github.com/repos/${config.githubRepo}`
         const headers = {
             Authorization: `token ${config.githubToken}`,
@@ -150,9 +148,8 @@ class Database {
     }
 
     async pushFile(filePath, content, retry = true) {
-        // Check if branch exists -- only needed once per process. Every
-        // subsequent push reuses the cached result instead of spending a
-        // round trip re-checking a branch we already know exists.
+        if (!config.githubToken || !config.githubRepo) return
+
         if (!this.branchVerified) {
             const branchCheckUrl = `https://api.github.com/repos/${config.githubRepo}/git/refs/heads/${config.githubBranch}`
             let branchCheck = await fetch(branchCheckUrl, {
@@ -177,9 +174,6 @@ class Database {
             "Content-Type": "application/json"
         }
 
-        // Reuse the sha we already have cached from a previous load/push of
-        // this exact file instead of spending an extra round trip to look it
-        // up again -- we only need to fetch it fresh the first time.
         let freshSha = this.fileSha[filePath]
         if (freshSha === undefined) freshSha = await this.getFileSha(filePath)
         const body = {
@@ -215,7 +209,6 @@ class Database {
         this.fileSha[filePath] = data.content.sha
     }
 
-    // Local DB operations
     saveLocal(data) {
         try {
             fs.writeFileSync(this.localDbPath, data, "utf8")
@@ -254,16 +247,13 @@ class Database {
         return true
     }
 
-    // Main load
     async load() {
         try {
-            // Try main DB
             let raw = await this.fetchFile(config.dbPath)
             if (raw) {
                 const mainData = JSON.parse(raw)
                 this.merge(mainData)
                 
-                // Load bots separately
                 const rawBots = await this.fetchFile(config.botDbPath)
                 if (rawBots) {
                     const botsData = JSON.parse(rawBots)
@@ -278,7 +268,6 @@ class Database {
                 return true
             }
 
-            // Try backup
             raw = await this.fetchFile(config.dbBackupPath)
             if (raw) {
                 const mainData = JSON.parse(raw)
@@ -287,16 +276,13 @@ class Database {
             }
         } catch (e) {}
 
-        // Try local
         if (this.loadLocal()) return true
         return false
     }
 
-    // Write DB to GitHub (remote backup). Runs the 4 file pushes in
-    // parallel instead of sequentially -- each pushFile() call is its own
-    // independent path, so there's no need to wait for one before starting
-    // the next. This alone cuts remote sync time roughly 4x.
     async write() {
+        if (!config.githubToken || !config.githubRepo) return
+        
         const mainData = JSON.stringify({
             apis: this.data.apis,
             users: this.data.users,
@@ -317,21 +303,6 @@ class Database {
         }
     }
 
-    // Save with debounce.
-    // PERFORMANCE: previously every route handler did `await db.save()`
-    // before responding, and save() only resolved once the data had been
-    // pushed to GitHub -- 4 sequential pushFile() calls, each doing a branch
-    // check + a sha lookup + the actual write (up to ~12 GitHub API round
-    // trips). That made every single mutating request (create API, add job,
-    // login, edit settings, ...) take several seconds.
-    //
-    // Now: the in-memory data is already up to date the instant callers
-    // mutate db.apis/db.users/etc (no serialization needed for that), and we
-    // persist it to local disk synchronously (fast, just a file write) so it
-    // survives within this process immediately. save() resolves right away
-    // instead of waiting on the network. The slow GitHub push still happens,
-    // debounced by 300ms so bursts of writes get batched into one push, but
-    // it now runs fully in the background and never blocks an HTTP response.
     save() {
         this.saveLocal(JSON.stringify(this.data))
 
@@ -346,7 +317,6 @@ class Database {
         return Promise.resolve()
     }
 
-    // Getters
     get apis() { return this.data.apis }
     get users() { return this.data.users }
     get sessions() { return this.data.sessions }
@@ -734,11 +704,6 @@ class MonitorManager {
 class AuthMiddleware {
     constructor(db) {
         this.db = db
-        // Bind methods so `this` stays correct when passed as bare
-        // middleware references (e.g. `auth.requireAuth` in app.post(...)).
-        // Without this, `this` is `undefined` inside the method (class bodies
-        // run in strict mode) and every protected route (create API, create
-        // bot, create monitor, settings, admin, etc.) crashes with a 500 error.
         this.requireAuth = this.requireAuth.bind(this)
         this.requireOwner = this.requireOwner.bind(this)
         this.requireAdminOrOwner = this.requireAdminOrOwner.bind(this)
@@ -769,7 +734,6 @@ class AuthMiddleware {
         return role === "owner" || role === "admin"
     }
 
-    // Middleware
     requireAuth(req, res, next) {
         if (!this.getUser(req)) {
             return res.json({ err: "Vui lòng đăng nhập" })
@@ -1403,15 +1367,7 @@ app.post("/owner/edit", auth.requireOwner, async (req, res) => {
     res.json({ ok: 1 })
 })
 
-// Public dashboard stats.
-// BUGFIX: the dashboard on the homepage calls this on load for every
-// visitor (owner, admin, member, or guest), but it used to hit
-// /owner/stats which is gated by auth.requireOwner. For anyone who wasn't
-// the Owner, that endpoint returned { err: "Yêu cầu quyền Owner" }, so the
-// stat cards silently stayed at 0 -- the dashboard looked "broken" for
-// everyone except the Owner account. This endpoint exposes the same kind
-// of aggregate, non-sensitive counts (no passwords, tokens, or session
-// ids) publicly, plus extra breakdowns for a more detailed overview.
+// Public dashboard stats
 app.get("/stats", (req, res) => {
     const apis = Object.values(db.apis)
     const users = Object.values(db.users)
@@ -1442,7 +1398,6 @@ app.get("/stats", (req, res) => {
         .slice(0, 5)
 
     res.json({
-        // Top-level cards (kept for backwards compatibility with existing UI)
         totalApis: apis.length,
         totalJobs,
         totalUsers: users.length,
@@ -1451,8 +1406,6 @@ app.get("/stats", (req, res) => {
         totalMonitors: monitors.length,
         onlineMonitors,
         activeSessions: Object.keys(db.sessions).length,
-
-        // Detailed breakdown for the expanded dashboard section
         enabledApis: apis.filter(a => a.enabled).length,
         disabledApis: apis.filter(a => !a.enabled).length,
         privateApis: apis.filter(a => a.privateMode).length,
@@ -1885,13 +1838,11 @@ function broadcast(payload) {
 // BACKGROUND TASKS
 // ============================================
 setInterval(() => {
-    // Clean expired jobs
     Object.values(db.apis).forEach(api => {
         jobManager.cleanExpiredJobs(api)
         jobManager.applyLimits(api)
     })
     
-    // Check monitors
     Object.values(db.monitors).forEach(m => {
         if (utils.now() - (m.lastCheck || 0) >= (m.interval || 60000)) {
             monitorManager.check(m)
@@ -1935,20 +1886,16 @@ app.get("*", (req, res) => {
 // ============================================
 async function start() {
     try {
-        // Install discord.py if needed
         try {
             execSync("python3 -m pip install --user discord.py aiohttp", { stdio: "ignore" })
         } catch (e) {}
         
-        // Create uploads directory
         if (!fs.existsSync("/tmp/bot_uploads")) {
             fs.mkdirSync("/tmp/bot_uploads", { recursive: true })
         }
         
-        // Load database
         await db.load()
         
-        // Start HTTP server
         httpServer.listen(config.port, () => {
             console.log(`🚀 Server running on port ${config.port}`)
             console.log(`📊 Dashboard: http://localhost:${config.port}`)
