@@ -808,7 +808,6 @@ app.post("/backup/download", async (req, res) => {
     }
     
     try {
-        // Tạo backup đầy đủ
         const backupData = {
             version: "1.0",
             timestamp: utils.now(),
@@ -850,23 +849,19 @@ app.post("/backup/restore", async (req, res) => {
     }
     
     try {
-        // Giải mã và parse backup
         const jsonData = Buffer.from(backup, 'base64').toString('utf8');
         const backupData = JSON.parse(jsonData);
         
-        // Validate backup data
         if (!backupData.data || !backupData.data.apis) {
             return res.status(400).json({ err: "Dữ liệu backup không hợp lệ" });
         }
         
-        // Kiểm tra version
         if (backupData.version !== "1.0") {
             return res.status(400).json({ 
                 err: `Version backup ${backupData.version} không tương thích với hệ thống hiện tại (1.0)` 
             });
         }
         
-        // Kiểm tra dữ liệu hợp lệ
         if (typeof backupData.data.apis !== 'object' ||
             typeof backupData.data.users !== 'object' ||
             typeof backupData.data.bots !== 'object' ||
@@ -874,7 +869,6 @@ app.post("/backup/restore", async (req, res) => {
             return res.status(400).json({ err: "Dữ liệu backup bị hỏng hoặc không hợp lệ" });
         }
         
-        // Tạo backup trước khi restore (để an toàn)
         const preRestoreBackup = {
             version: "1.0",
             timestamp: utils.now(),
@@ -887,18 +881,15 @@ app.post("/backup/restore", async (req, res) => {
             }
         };
         
-        // Lưu backup pre-restore vào file
         const preRestorePath = `/tmp/pre_restore_${Date.now()}.json`;
         fs.writeFileSync(preRestorePath, JSON.stringify(preRestoreBackup, null, 2));
         
-        // Restore dữ liệu
         db.data.apis = backupData.data.apis;
         db.data.users = backupData.data.users;
         db.data.sessions = backupData.data.sessions || {};
         db.data.bots = backupData.data.bots;
         db.data.monitors = backupData.data.monitors;
         
-        // Lưu vào file local và remote
         await db.save();
         await db.write();
         
@@ -920,7 +911,7 @@ app.post("/backup/restore", async (req, res) => {
     }
 });
 
-// Lấy thông tin backup hiện tại (không cần mật khẩu)
+// Lấy thông tin backup hiện tại
 app.get("/backup/info", async (req, res) => {
     try {
         const stats = {
@@ -932,7 +923,6 @@ app.get("/backup/info", async (req, res) => {
             totalJobs: 0
         };
         
-        // Tính tổng jobs
         Object.values(db.apis).forEach(api => {
             Object.values(api.jobs).forEach(jobs => {
                 stats.totalJobs += jobs.length;
@@ -950,7 +940,7 @@ app.get("/backup/info", async (req, res) => {
     }
 });
 
-// Tạo backup và lưu vào file server (có mật khẩu)
+// Tạo backup và lưu vào file server
 app.post("/backup/save-local", async (req, res) => {
     const { password } = req.body;
     
@@ -975,7 +965,6 @@ app.post("/backup/save-local", async (req, res) => {
         const filepath = `/tmp/${filename}`;
         fs.writeFileSync(filepath, JSON.stringify(backupData, null, 2));
         
-        // Lưu thông tin backup cuối
         fs.writeFileSync('/tmp/last_backup.json', JSON.stringify({
             filename,
             timestamp: backupData.timestamp,
@@ -994,8 +983,102 @@ app.post("/backup/save-local", async (req, res) => {
     }
 });
 
+// Lấy danh sách backup trên server
+app.get("/backup/list", async (req, res) => {
+    try {
+        const files = fs.readdirSync('/tmp')
+            .filter(f => f.startsWith('backup_') && f.endsWith('.json'))
+            .map(f => {
+                const stats = fs.statSync(`/tmp/${f}`);
+                return {
+                    name: f,
+                    size: stats.size,
+                    modified: stats.mtimeMs,
+                    created: stats.birthtimeMs
+                };
+            })
+            .sort((a, b) => b.modified - a.modified);
+        
+        res.json({
+            ok: 1,
+            files,
+            count: files.length
+        });
+    } catch (error) {
+        res.status(500).json({ err: "Lỗi lấy danh sách backup: " + error.message });
+    }
+});
+
+// Tải backup từ server về máy
+app.post("/backup/download-server", async (req, res) => {
+    const { password, filename } = req.body;
+    
+    if (!verifyBackupPassword(password)) {
+        return res.status(401).json({ err: "Mật khẩu backup không đúng" });
+    }
+    
+    if (!filename) {
+        return res.status(400).json({ err: "Thiếu tên file" });
+    }
+    
+    try {
+        const filepath = `/tmp/${filename}`;
+        if (!fs.existsSync(filepath)) {
+            return res.status(404).json({ err: "File không tồn tại" });
+        }
+        
+        const content = fs.readFileSync(filepath, 'utf8');
+        const encoded = Buffer.from(content).toString('base64');
+        
+        res.json({
+            ok: 1,
+            backup: encoded,
+            filename,
+            size: fs.statSync(filepath).size
+        });
+    } catch (error) {
+        res.status(500).json({ err: "Lỗi tải backup: " + error.message });
+    }
+});
+
+// Xóa backup trên server
+app.post("/backup/delete", async (req, res) => {
+    const { password, filename } = req.body;
+    
+    if (!verifyBackupPassword(password)) {
+        return res.status(401).json({ err: "Mật khẩu backup không đúng" });
+    }
+    
+    if (!filename) {
+        return res.status(400).json({ err: "Thiếu tên file" });
+    }
+    
+    try {
+        const filepath = `/tmp/${filename}`;
+        if (!fs.existsSync(filepath)) {
+            return res.status(404).json({ err: "File không tồn tại" });
+        }
+        
+        fs.unlinkSync(filepath);
+        
+        if (fs.existsSync('/tmp/last_backup.json')) {
+            const lastBackup = JSON.parse(fs.readFileSync('/tmp/last_backup.json', 'utf8'));
+            if (lastBackup.filename === filename) {
+                fs.unlinkSync('/tmp/last_backup.json');
+            }
+        }
+        
+        res.json({
+            ok: 1,
+            message: `Đã xóa ${filename}`
+        });
+    } catch (error) {
+        res.status(500).json({ err: "Lỗi xóa backup: " + error.message });
+    }
+});
+
 // ============================================
-// API ROUTES (giữ nguyên các route hiện có)
+// API ROUTES
 // ============================================
 
 // Auth routes
