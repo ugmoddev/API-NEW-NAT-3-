@@ -250,32 +250,58 @@ class Database {
 
     async load() {
         try {
-            let raw = await this.fetchFile(config.dbPath)
-            if (raw) {
-                const mainData = JSON.parse(raw)
-                this.merge(mainData)
-                
-                const rawBots = await this.fetchFile(config.botDbPath)
-                if (rawBots) {
-                    const botsData = JSON.parse(rawBots)
-                    this.data.bots = botsData.bots || {}
-                } else {
-                    const rawBotsBackup = await this.fetchFile(config.botDbBackupPath)
-                    if (rawBotsBackup) {
-                        const botsData = JSON.parse(rawBotsBackup)
-                        this.data.bots = botsData.bots || {}
+            // Priority 1: Try loading from local files if they exist
+            if (fs.existsSync(config.dbPath)) {
+                try {
+                    const raw = fs.readFileSync(config.dbPath, "utf8")
+                    const data = JSON.parse(raw)
+                    if (this.merge(data)) {
+                        console.log("Loaded from local db.json")
+                        
+                        // Load bots if exist
+                        if (fs.existsSync(config.botDbPath)) {
+                            const rawBots = fs.readFileSync(config.botDbPath, "utf8")
+                            const botsData = JSON.parse(rawBots)
+                            this.data.bots = botsData.bots || {}
+                        }
+                        return true
                     }
+                } catch (e) {
+                    console.error("Error loading local db.json:", e.message)
                 }
-                return true
             }
 
-            raw = await this.fetchFile(config.dbBackupPath)
-            if (raw) {
-                const mainData = JSON.parse(raw)
-                this.merge(mainData)
-                return true
+            // Priority 2: Try loading from GitHub if configured
+            if (config.githubToken && config.githubRepo) {
+                let raw = await this.fetchFile(config.dbPath)
+                if (raw) {
+                    const mainData = JSON.parse(raw)
+                    this.merge(mainData)
+                    
+                    const rawBots = await this.fetchFile(config.botDbPath)
+                    if (rawBots) {
+                        const botsData = JSON.parse(rawBots)
+                        this.data.bots = botsData.bots || {}
+                    } else {
+                        const rawBotsBackup = await this.fetchFile(config.botDbBackupPath)
+                        if (rawBotsBackup) {
+                            const botsData = JSON.parse(rawBotsBackup)
+                            this.data.bots = botsData.bots || {}
+                        }
+                    }
+                    return true
+                }
+
+                raw = await this.fetchFile(config.dbBackupPath)
+                if (raw) {
+                    const mainData = JSON.parse(raw)
+                    this.merge(mainData)
+                    return true
+                }
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error("Database load error:", e.message)
+        }
 
         if (this.loadLocal()) return true
         return false
@@ -305,7 +331,26 @@ class Database {
     }
 
     save() {
+        // Always save to local db_local.json for internal persistence
         this.saveLocal(JSON.stringify(this.data))
+
+        // If GitHub is not configured, also save to db.json and db_bots.json locally
+        if (!config.githubToken || !config.githubRepo) {
+            try {
+                const mainData = JSON.stringify({
+                    apis: this.data.apis,
+                    users: this.data.users,
+                    sessions: this.data.sessions,
+                    monitors: this.data.monitors
+                }, null, 2)
+                fs.writeFileSync(config.dbPath, mainData, "utf8")
+                
+                const botsData = JSON.stringify({ bots: this.data.bots }, null, 2)
+                fs.writeFileSync(config.botDbPath, botsData, "utf8")
+            } catch (e) {
+                console.error("Local file save failed:", e.message)
+            }
+        }
 
         if (this.saveTimeout) clearTimeout(this.saveTimeout)
         this.saveTimeout = setTimeout(() => {
