@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Queue System</title>
+    <link rel="icon" type="image/x-icon" href="/assets/icons/favicon.ico">
+    <link rel="stylesheet" href="/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div id="app">
+        <!-- ===== HEADER ===== -->
+        <header class="header">
+            <div class="container">
+                <div class="logo">
+                    <img src="/assets/icons/logo.svg" alt="Logo" class="logo-icon">
+                    <span class="logo-text">Job Queue</span>
+                    <span class="logo-badge">v1.0</span>
+                </div>
+                <div class="header-actions">
+                    <div id="userInfo" class="user-info">
+                        <div class="user-avatar">
+                            <img id="userAvatar" src="/assets/images/default-avatar.png" alt="Avatar">
+                        </div>
+                        <div class="user-details">
+                            <span id="userName" class="user-name">Guest</span>
+                            <span id="userRole" class="user-role">visitor</span>
+                        </div>
+                    </div>
+                    <button id="authBtn" class="btn btn-primary">
+                        <i class="fas fa-sign-in-alt"></i>
+                        <span>Đăng nhập</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- ===== MAIN CONTENT ===== -->
+        <main class="main">
+            <div class="container">
+                <!-- Dashboard Stats -->
+                <section class="stats-grid" id="statsGrid">
+                    <div class="stat-card stat-card-api">
+                        <div class="stat-icon">
+                            <i class="fas fa-code"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-label">Tổng API</span>
+                            <span class="stat-value" id="totalApis">0</span>
+                        </div>
+                        <div class="stat-trend" id="trendApis">
+                            <i class="fas fa-toggle-on"></i>
+                            <span><span id="trendEnabledApis">0</span> đang bật</span>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-card-jobs">
+                        <div class="stat-icon">
+                            <i class="fas fa-tasks"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-label">Tổng Jobs</span>
+                            <span class="stat-value" id="totalJobs">0</span>
+                        </div>
+                        <div class="stat-trend" id="trendJobs">
+                            <i class="fas fa-chart-line"></i>
+                            <span>TB <span id="trendAvgJobs">0</span>/API</span>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-card-users">
+                        <div class="stat-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-label">Người dùng</span>
+                            <span class="stat-value" id="totalUsers">0</span>
+                        </div>
+                        <div class="stat-trend" id="trendUsers">
+                            <i class="fas fa-bolt"></i>
+                            <span><span id="trendSessions">0</span> phiên hoạt động</span>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-card-bots">
+                        <div class="stat-icon">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-label">Bot đang chạy</span>
+                            <span class="stat-value" id="runningBots">0</span>
+                        </div>
+                        <div class="stat-trend down" id="trendBots">
+                            <i class="fas fa-power-off"></i>
+                            <span><span id="trendStoppedBots">0</span> đã dừng</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Detailed Dashboard -->
+                <section class="detail-grid" id="detailGrid">
+                    <div class="detail-card">
+                        <div class="detail-card-header">
+                            <h3><i class="fas fa-server"></i> Trạng thái hệ thống</h3>
+                        </div>
+                        <div class="detail-rows">
+                            <div class="detail-row">
+                                <span class="detail-row-label">API đang bật</span>
+                                <span class="detail-row-value" id="statEnabledApis">0<span class="detail-row-sub">/ 0</span></span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-row-label">API riêng tư</span>
+                                <span class="detail-row-value" id="statPrivateApis">0</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-row-label">Bot đang chạy</span>
+                                <span class="detail-row-value" id="statRunningBots">0<span class="detail-row-sub">/ 0</span></span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-row-label">Monitor online</span>
+                                <span class="detail-row-value" id="statOnlineMonitors">0<span class="detail-row-sub">/ 0</span></span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-row-label">Phiên đang hoạt động</span>
+                                <span class="detail-row-value" id="statActiveSessions">0</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-row-label">Trung bình job / API</span>
+                                <span class="detail-row-value" id="statAvgJobs">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="detail-card">
+                        <div class="detail-card-header">
+                            <h3><i class="fas fa-users-cog"></i> Người dùng theo vai trò</h3>
+                        </div>
+                        <div class="detail-rows" id="statUsersByRole">
+                            <div class="detail-empty">Chưa có dữ liệu</div>
+                        </div>
+                    </div>
+
+                    <div class="detail-card">
+                        <div class="detail-card-header">
+                            <h3><i class="fas fa-ranking-star"></i> Top API nhiều job nhất</h3>
+                        </div>
+                        <div class="detail-rows" id="statTopApis">
+                            <div class="detail-empty">Chưa có dữ liệu</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== TABS ===== -->
+                <div class="tabs-wrapper">
+                    <div class="tabs">
+                        <button class="tab-btn active" data-tab="apis">
+                            <i class="fas fa-code"></i>
+                            APIs
+                            <span class="tab-badge" id="apiCount">0</span>
+                        </button>
+                        <button class="tab-btn" data-tab="bots">
+                            <i class="fas fa-robot"></i>
+                            Bots
+                            <span class="tab-badge" id="botCount">0</span>
+                        </button>
+                        <button class="tab-btn" data-tab="monitors">
+                            <i class="fas fa-heartbeat"></i>
+                            Monitors
+                            <span class="tab-badge" id="monitorCount">0</span>
+                        </button>
+                        <button class="tab-btn" data-tab="chat">
+                            <i class="fas fa-comment-dots"></i>
+                            Chat
+                            <span class="tab-badge" id="chatCount">0</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ===== TAB: APIs ===== -->
+                <div id="tab-apis" class="tab-content active">
+                    <div class="tab-header">
+                        <div class="tab-header-left">
+                            <h2><i class="fas fa-code"></i> Quản lý API</h2>
+                            <span class="tab-subtitle">Tạo và quản lý các API endpoint</span>
+                        </div>
+                        <button id="createApiBtn" class="btn btn-success">
+                            <i class="fas fa-plus"></i>
+                            Tạo API mới
+                        </button>
+                    </div>
+                    <div id="apiList" class="api-grid">
+                        <!-- APIs will be rendered here -->
+                    </div>
+                </div>
+
+                <!-- ===== TAB: Bots ===== -->
+                <div id="tab-bots" class="tab-content">
+                    <div class="tab-header">
+                        <div class="tab-header-left">
+                            <h2><i class="fas fa-robot"></i> Quản lý Bot</h2>
+                            <span class="tab-subtitle">Host và quản lý Discord bots</span>
+                        </div>
+                        <button id="createBotBtn" class="btn btn-success">
+                            <i class="fas fa-plus"></i>
+                            Tạo Bot mới
+                        </button>
+                    </div>
+                    <div id="botList" class="bot-grid">
+                        <!-- Bots will be rendered here -->
+                    </div>
+                </div>
+
+                <!-- ===== TAB: Monitors ===== -->
+                <div id="tab-monitors" class="tab-content">
+                    <div class="tab-header">
+                        <div class="tab-header-left">
+                            <h2><i class="fas fa-heartbeat"></i> Quản lý Monitor</h2>
+                            <span class="tab-subtitle">Theo dõi uptime website</span>
+                        </div>
+                        <button id="createMonitorBtn" class="btn btn-success">
+                            <i class="fas fa-plus"></i>
+                            Tạo Monitor mới
+                        </button>
+                    </div>
+                    <div id="monitorList" class="monitor-grid">
+                        <!-- Monitors will be rendered here -->
+                    </div>
+                </div>
+
+                <!-- ===== TAB: Chat ===== -->
+                <div id="tab-chat" class="tab-content">
+                    <div class="chat-container">
+                        <div class="chat-header">
+                            <div class="chat-header-left">
+                                <i class="fas fa-comment-dots"></i>
+                                <span>Chat Room</span>
+                            </div>
+                            <div class="chat-online">
+                                <span class="online-dot"></span>
+                                <span id="onlineCount">0</span> online
+                            </div>
+                        </div>
+                        <div id="chatMessages" class="chat-messages">
+                            <!-- Chat messages will be rendered here -->
+                        </div>
+                        <div class="chat-input">
+                            <input type="text" id="chatInput" placeholder="Nhập tin nhắn..." maxlength="500">
+                            <button id="chatSendBtn" class="btn btn-primary">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ===== MODAL ===== -->
+        <div id="modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="modalTitle">Modal Title</h2>
+                    <span class="modal-close">&times;</span>
+                </div>
+                <div id="modalBody" class="modal-body">
+                    <!-- Modal content will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== TOAST CONTAINER ===== -->
+        <div id="toastContainer" class="toast-container"></div>
+    </div>
+
+    <script src="/js/api.js"></script>
+</body>
+</html>
