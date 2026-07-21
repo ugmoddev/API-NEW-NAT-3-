@@ -8,67 +8,62 @@ let currentUser = null;
 let ws = null;
 let currentTab = 'apis';
 let chatConnected = false;
+let statsInterval = null;
 
 // ============================================
 // DOM ELEMENTS
 // ============================================
+const $ = (id) => document.getElementById(id);
+const $$ = (selector) => document.querySelectorAll(selector);
+
 const elements = {
-    // User
-    userInfo: document.getElementById('userInfo'),
-    userAvatar: document.getElementById('userAvatar'),
-    userName: document.getElementById('userName'),
-    userRole: document.getElementById('userRole'),
-    authBtn: document.getElementById('authBtn'),
+    userInfo: $('userInfo'),
+    userAvatar: $('userAvatar'),
+    userName: $('userName'),
+    userRole: $('userRole'),
+    authBtn: $('authBtn'),
     
-    // Stats
-    totalApis: document.getElementById('totalApis'),
-    totalJobs: document.getElementById('totalJobs'),
-    totalUsers: document.getElementById('totalUsers'),
-    runningBots: document.getElementById('runningBots'),
+    totalApis: $('totalApis'),
+    totalJobs: $('totalJobs'),
+    totalUsers: $('totalUsers'),
+    runningBots: $('runningBots'),
 
-    // Stats - trend badges
-    trendEnabledApis: document.getElementById('trendEnabledApis'),
-    trendAvgJobs: document.getElementById('trendAvgJobs'),
-    trendSessions: document.getElementById('trendSessions'),
-    trendStoppedBots: document.getElementById('trendStoppedBots'),
+    trendEnabledApis: $('trendEnabledApis'),
+    trendAvgJobs: $('trendAvgJobs'),
+    trendSessions: $('trendSessions'),
+    trendStoppedBots: $('trendStoppedBots'),
 
-    // Stats - detailed dashboard
-    statEnabledApis: document.getElementById('statEnabledApis'),
-    statPrivateApis: document.getElementById('statPrivateApis'),
-    statRunningBots: document.getElementById('statRunningBots'),
-    statOnlineMonitors: document.getElementById('statOnlineMonitors'),
-    statActiveSessions: document.getElementById('statActiveSessions'),
-    statAvgJobs: document.getElementById('statAvgJobs'),
-    statUsersByRole: document.getElementById('statUsersByRole'),
-    statTopApis: document.getElementById('statTopApis'),
+    statEnabledApis: $('statEnabledApis'),
+    statPrivateApis: $('statPrivateApis'),
+    statRunningBots: $('statRunningBots'),
+    statOnlineMonitors: $('statOnlineMonitors'),
+    statActiveSessions: $('statActiveSessions'),
+    statAvgJobs: $('statAvgJobs'),
+    statUsersByRole: $('statUsersByRole'),
+    statTopApis: $('statTopApis'),
     
-    // Lists
-    apiList: document.getElementById('apiList'),
-    botList: document.getElementById('botList'),
-    monitorList: document.getElementById('monitorList'),
+    apiList: $('apiList'),
+    botList: $('botList'),
+    monitorList: $('monitorList'),
     
-    // Chat
-    chatMessages: document.getElementById('chatMessages'),
-    chatInput: document.getElementById('chatInput'),
-    chatSendBtn: document.getElementById('chatSendBtn'),
-    onlineCount: document.getElementById('onlineCount'),
+    chatMessages: $('chatMessages'),
+    chatInput: $('chatInput'),
+    chatSendBtn: $('chatSendBtn'),
+    onlineCount: $('onlineCount'),
     
-    // Modal
-    modal: document.getElementById('modal'),
-    modalTitle: document.getElementById('modalTitle'),
-    modalBody: document.getElementById('modalBody'),
+    modal: $('modal'),
+    modalTitle: $('modalTitle'),
+    modalBody: $('modalBody'),
     modalClose: document.querySelector('.modal-close'),
     
-    // Buttons
-    createApiBtn: document.getElementById('createApiBtn'),
-    createBotBtn: document.getElementById('createBotBtn'),
-    createMonitorBtn: document.getElementById('createMonitorBtn'),
+    createApiBtn: $('createApiBtn'),
+    createBotBtn: $('createBotBtn'),
+    createMonitorBtn: $('createMonitorBtn'),
     
-    // Badges
-    apiCount: document.getElementById('apiCount'),
-    botCount: document.getElementById('botCount'),
-    monitorCount: document.getElementById('monitorCount'),
-    chatCount: document.getElementById('chatCount'),
+    apiCount: $('apiCount'),
+    botCount: $('botCount'),
+    monitorCount: $('monitorCount'),
+    chatCount: $('chatCount'),
 };
 
 // ============================================
@@ -114,6 +109,13 @@ async function apiFetch(endpoint, options = {}) {
         console.error('API Error:', error);
         throw error;
     }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function formatDate(timestamp) {
@@ -163,6 +165,25 @@ function getStatusIcon(status) {
     return icons[status] || 'fa-circle';
 }
 
+function debounce(fn, delay = 300) {
+    let timer;
+    return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), delay);
+    };
+}
+
+function throttle(fn, limit = 1000) {
+    let inThrottle = false;
+    return (...args) => {
+        if (!inThrottle) {
+            fn(...args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    };
+}
+
 // ============================================
 // TOAST NOTIFICATIONS
 // ============================================
@@ -179,7 +200,7 @@ function showToast(message, type = 'success') {
     toast.className = `toast toast-${type}`;
     toast.innerHTML = `
         <i class="fas ${icons[type] || icons.info}"></i>
-        <span>${message}</span>
+        <span>${escapeHtml(message)}</span>
     `;
     
     container.appendChild(toast);
@@ -251,7 +272,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
         document.getElementById(`tab-${tab}`).classList.add('active');
         
-        // Load data based on tab
         switch(tab) {
             case 'apis': loadApis(); break;
             case 'bots': loadBots(); break;
@@ -266,7 +286,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // ============================================
 elements.authBtn.addEventListener('click', async () => {
     if (currentUser) {
-        // Logout
         try {
             await apiFetch('/logout', { method: 'POST' });
             setToken(null);
@@ -435,7 +454,7 @@ async function register() {
 }
 
 // ============================================
-// LOAD DATA FUNCTIONS
+// RENDER FUNCTIONS - OPTIMIZED
 // ============================================
 const ROLE_LABELS = { owner: 'Owner', admin: 'Admin', member: 'Member' };
 
@@ -479,64 +498,11 @@ function renderTopApis(topApis) {
     }).join('');
 }
 
-async function loadStats() {
-    try {
-        const data = await apiFetch('/stats');
-        if (data.err) return;
-
-        // Top stat cards
-        elements.totalApis.textContent = data.totalApis || 0;
-        elements.totalJobs.textContent = data.totalJobs || 0;
-        elements.totalUsers.textContent = data.totalUsers || 0;
-        elements.runningBots.textContent = data.runningBots || 0;
-
-        // Tab badges
-        elements.apiCount.textContent = data.totalApis || 0;
-        elements.botCount.textContent = data.totalBots || 0;
-        elements.monitorCount.textContent = data.totalMonitors || 0;
-
-        // Trend badges (real secondary metrics, not fake percentages)
-        if (elements.trendEnabledApis) elements.trendEnabledApis.textContent = data.enabledApis || 0;
-        if (elements.trendAvgJobs) elements.trendAvgJobs.textContent = data.avgJobsPerApi || 0;
-        if (elements.trendSessions) elements.trendSessions.textContent = data.activeSessions || 0;
-        if (elements.trendStoppedBots) elements.trendStoppedBots.textContent = data.stoppedBots || 0;
-
-        // Detailed dashboard section
-        if (elements.statEnabledApis) {
-            elements.statEnabledApis.innerHTML = `${data.enabledApis || 0}<span class="detail-row-sub">/ ${data.totalApis || 0}</span>`;
-        }
-        if (elements.statPrivateApis) elements.statPrivateApis.textContent = data.privateApis || 0;
-        if (elements.statRunningBots) {
-            elements.statRunningBots.innerHTML = `${data.runningBots || 0}<span class="detail-row-sub">/ ${data.totalBots || 0}</span>`;
-        }
-        if (elements.statOnlineMonitors) {
-            elements.statOnlineMonitors.innerHTML = `${data.onlineMonitors || 0}<span class="detail-row-sub">/ ${data.totalMonitors || 0}</span>`;
-        }
-        if (elements.statActiveSessions) elements.statActiveSessions.textContent = data.activeSessions || 0;
-        if (elements.statAvgJobs) elements.statAvgJobs.textContent = data.avgJobsPerApi || 0;
-
-        renderUsersByRole(data.usersByRole);
-        renderTopApis(data.topApis);
-    } catch (e) {
-        console.error('Failed to load stats:', e);
-    }
-}
-
-async function loadApis() {
-    try {
-        const apis = await apiFetch('/my');
-        if (Array.isArray(apis)) {
-            renderApis(apis);
-        }
-    } catch (e) {
-        console.error('Failed to load APIs:', e);
-        showToast('Lỗi tải danh sách API', 'error');
-    }
-}
-
 function renderApis(apis) {
+    const container = elements.apiList;
+    
     if (!apis || apis.length === 0) {
-        elements.apiList.innerHTML = `
+        container.innerHTML = `
             <div class="empty-state">
                 <img src="/assets/images/empty-state.svg" alt="Empty">
                 <h3>Chưa có API nào</h3>
@@ -545,62 +511,68 @@ function renderApis(apis) {
         `;
         return;
     }
-    
-    elements.apiList.innerHTML = apis.map(api => `
-        <div class="api-card">
-            <div class="card-header">
-                <div class="card-title">
-                    <i class="fas fa-code"></i>
-                    ${api.displayName || api.name}
-                </div>
-                <span class="status-badge ${api.enabled ? 'status-online' : 'status-offline'}">
-                    ${api.enabled ? 'Online' : 'Offline'}
-                </span>
-            </div>
-            <div class="card-owner">
-                <i class="fas fa-user"></i> ${api.owner}
-            </div>
-            <div class="card-stats">
-                <span class="stat-item">
-                    <i class="fas fa-tasks"></i> ${api.totalJobs} jobs
-                </span>
-                <span class="stat-item">
-                    <i class="fas fa-users"></i> ${Object.keys(api.bosses || {}).length} bosses
-                </span>
-                ${api.privateMode ? `<span class="stat-item"><i class="fas fa-lock"></i> Private</span>` : ''}
-            </div>
-            <div class="card-actions">
-                <button onclick="viewApi('${api.id}')" class="btn btn-info btn-sm">
-                    <i class="fas fa-eye"></i> Xem
-                </button>
-                <button onclick="editApi('${api.id}')" class="btn btn-warning btn-sm">
-                    <i class="fas fa-edit"></i> Sửa
-                </button>
-                <button onclick="copyApiKey('${api.apiKey}')" class="btn btn-primary btn-sm">
-                    <i class="fas fa-key"></i> Key
-                </button>
-                <button onclick="deleteApi('${api.id}')" class="btn btn-danger btn-sm">
-                    <i class="fas fa-trash"></i> Xóa
-                </button>
-            </div>
-        </div>
-    `).join('');
-}
 
-async function loadBots() {
-    try {
-        const bots = await apiFetch('/bot/my');
-        if (Array.isArray(bots)) {
-            renderBots(bots);
-        }
-    } catch (e) {
-        console.error('Failed to load bots:', e);
+    const displayApis = apis.slice(0, 50);
+    let html = '';
+    
+    for (const api of displayApis) {
+        html += `
+            <div class="api-card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fas fa-code"></i>
+                        ${escapeHtml(api.displayName || api.name)}
+                    </div>
+                    <span class="status-badge ${api.enabled ? 'status-online' : 'status-offline'}">
+                        ${api.enabled ? 'Online' : 'Offline'}
+                    </span>
+                </div>
+                <div class="card-owner">
+                    <i class="fas fa-user"></i> ${escapeHtml(api.owner)}
+                </div>
+                <div class="card-stats">
+                    <span class="stat-item">
+                        <i class="fas fa-tasks"></i> ${api.totalJobs || 0} jobs
+                    </span>
+                    <span class="stat-item">
+                        <i class="fas fa-users"></i> ${Object.keys(api.bosses || {}).length} bosses
+                    </span>
+                    ${api.privateMode ? `<span class="stat-item"><i class="fas fa-lock"></i> Private</span>` : ''}
+                </div>
+                <div class="card-actions">
+                    <button onclick="viewApi('${api.id}')" class="btn btn-info btn-sm">
+                        <i class="fas fa-eye"></i> Xem
+                    </button>
+                    <button onclick="editApi('${api.id}')" class="btn btn-warning btn-sm">
+                        <i class="fas fa-edit"></i> Sửa
+                    </button>
+                    <button onclick="copyApiKey('${api.apiKey}')" class="btn btn-primary btn-sm">
+                        <i class="fas fa-key"></i> Key
+                    </button>
+                    <button onclick="deleteApi('${api.id}')" class="btn btn-danger btn-sm">
+                        <i class="fas fa-trash"></i> Xóa
+                    </button>
+                </div>
+            </div>
+        `;
     }
+    
+    if (apis.length > 50) {
+        html += `
+            <div class="load-more" style="grid-column: 1/-1; text-align: center; padding: 16px; color: var(--text-muted);">
+                <i class="fas fa-info-circle"></i> Hiển thị 50/${apis.length} API
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
 }
 
 function renderBots(bots) {
+    const container = elements.botList;
+    
     if (!bots || bots.length === 0) {
-        elements.botList.innerHTML = `
+        container.innerHTML = `
             <div class="empty-state">
                 <img src="/assets/images/empty-state.svg" alt="Empty">
                 <h3>Chưa có bot nào</h3>
@@ -609,65 +581,71 @@ function renderBots(bots) {
         `;
         return;
     }
-    
-    elements.botList.innerHTML = bots.map(bot => `
-        <div class="bot-card">
-            <div class="card-header">
-                <div class="card-title">
-                    <i class="fas fa-robot"></i>
-                    ${bot.name}
-                </div>
-                <span class="status-badge ${getStatusColor(bot.status)}">
-                    <i class="fas ${getStatusIcon(bot.status)}"></i>
-                    ${bot.status}
-                </span>
-            </div>
-            <div class="card-stats">
-                <span class="stat-item">
-                    <i class="fas fa-sync"></i> Restart: ${bot.restartCount || 0}
-                </span>
-                <span class="stat-item">
-                    <i class="fas ${bot.autoRestart ? 'fa-toggle-on' : 'fa-toggle-off'}"></i>
-                    ${bot.autoRestart ? 'Auto' : 'Manual'}
-                </span>
-                <span class="stat-item">
-                    <i class="fas fa-clock"></i> ${formatRelativeTime(bot.updated_at)}
-                </span>
-            </div>
-            <div class="card-actions">
-                ${bot.status === 'running' || bot.status === 'restarting' ? 
-                    `<button onclick="stopBot('${bot.id}')" class="btn btn-danger btn-sm">
-                        <i class="fas fa-stop"></i> Dừng
-                    </button>` :
-                    `<button onclick="startBot('${bot.id}')" class="btn btn-success btn-sm">
-                        <i class="fas fa-play"></i> Chạy
-                    </button>`
-                }
-                <button onclick="viewBotLogs('${bot.id}')" class="btn btn-info btn-sm">
-                    <i class="fas fa-file-alt"></i> Logs
-                </button>
-                <button onclick="deleteBot('${bot.id}')" class="btn btn-danger btn-sm">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        </div>
-    `).join('');
-}
 
-async function loadMonitors() {
-    try {
-        const monitors = await apiFetch('/monitor/my');
-        if (Array.isArray(monitors)) {
-            renderMonitors(monitors);
-        }
-    } catch (e) {
-        console.error('Failed to load monitors:', e);
+    const displayBots = bots.slice(0, 20);
+    let html = '';
+    
+    for (const bot of displayBots) {
+        html += `
+            <div class="bot-card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fas fa-robot"></i>
+                        ${escapeHtml(bot.name)}
+                    </div>
+                    <span class="status-badge ${getStatusColor(bot.status)}">
+                        <i class="fas ${getStatusIcon(bot.status)}"></i>
+                        ${bot.status}
+                    </span>
+                </div>
+                <div class="card-stats">
+                    <span class="stat-item">
+                        <i class="fas fa-sync"></i> Restart: ${bot.restartCount || 0}
+                    </span>
+                    <span class="stat-item">
+                        <i class="fas ${bot.autoRestart ? 'fa-toggle-on' : 'fa-toggle-off'}"></i>
+                        ${bot.autoRestart ? 'Auto' : 'Manual'}
+                    </span>
+                    <span class="stat-item">
+                        <i class="fas fa-clock"></i> ${formatRelativeTime(bot.updated_at)}
+                    </span>
+                </div>
+                <div class="card-actions">
+                    ${bot.status === 'running' || bot.status === 'restarting' ? 
+                        `<button onclick="stopBot('${bot.id}')" class="btn btn-danger btn-sm">
+                            <i class="fas fa-stop"></i> Dừng
+                        </button>` :
+                        `<button onclick="startBot('${bot.id}')" class="btn btn-success btn-sm">
+                            <i class="fas fa-play"></i> Chạy
+                        </button>`
+                    }
+                    <button onclick="viewBotLogs('${bot.id}')" class="btn btn-info btn-sm">
+                        <i class="fas fa-file-alt"></i> Logs
+                    </button>
+                    <button onclick="deleteBot('${bot.id}')" class="btn btn-danger btn-sm">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
     }
+    
+    if (bots.length > 20) {
+        html += `
+            <div class="load-more" style="grid-column: 1/-1; text-align: center; padding: 16px; color: var(--text-muted);">
+                <i class="fas fa-info-circle"></i> Hiển thị 20/${bots.length} bot
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
 }
 
 function renderMonitors(monitors) {
+    const container = elements.monitorList;
+    
     if (!monitors || monitors.length === 0) {
-        elements.monitorList.innerHTML = `
+        container.innerHTML = `
             <div class="empty-state">
                 <img src="/assets/images/empty-state.svg" alt="Empty">
                 <h3>Chưa có monitor nào</h3>
@@ -676,43 +654,153 @@ function renderMonitors(monitors) {
         `;
         return;
     }
+
+    const displayMonitors = monitors.slice(0, 20);
+    let html = '';
     
-    elements.monitorList.innerHTML = monitors.map(m => `
-        <div class="monitor-card">
-            <div class="card-header">
-                <div class="card-title">
-                    <i class="fas fa-heartbeat"></i>
-                    ${m.name}
+    for (const m of displayMonitors) {
+        html += `
+            <div class="monitor-card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fas fa-heartbeat"></i>
+                        ${escapeHtml(m.name)}
+                    </div>
+                    <span class="status-badge ${getStatusColor(m.lastStatus)}">
+                        <i class="fas ${getStatusIcon(m.lastStatus)}"></i>
+                        ${m.lastStatus}
+                    </span>
                 </div>
-                <span class="status-badge ${getStatusColor(m.lastStatus)}">
-                    <i class="fas ${getStatusIcon(m.lastStatus)}"></i>
-                    ${m.lastStatus}
-                </span>
+                <div class="card-owner">
+                    <i class="fas fa-link"></i> ${escapeHtml(m.url)}
+                </div>
+                <div class="card-stats">
+                    <span class="stat-item">
+                        <i class="fas fa-chart-line"></i> ${m.uptime || 0}%
+                    </span>
+                    <span class="stat-item">
+                        <i class="fas fa-clock"></i> ${m.lastPing || 0}ms
+                    </span>
+                    <span class="stat-item">
+                        <i class="fas fa-check"></i> ${m.goodChecks || 0}/${m.totalChecks || 0}
+                    </span>
+                </div>
+                <div class="card-actions">
+                    <button onclick="viewMonitor('${m.id}')" class="btn btn-info btn-sm">
+                        <i class="fas fa-eye"></i> Xem
+                    </button>
+                    <button onclick="deleteMonitor('${m.id}')" class="btn btn-danger btn-sm">
+                        <i class="fas fa-trash"></i> Xóa
+                    </button>
+                </div>
             </div>
-            <div class="card-owner">
-                <i class="fas fa-link"></i> ${m.url}
-            </div>
-            <div class="card-stats">
-                <span class="stat-item">
-                    <i class="fas fa-chart-line"></i> ${m.uptime || 0}%
-                </span>
-                <span class="stat-item">
-                    <i class="fas fa-clock"></i> ${m.lastPing || 0}ms
-                </span>
-                <span class="stat-item">
-                    <i class="fas fa-check"></i> ${m.goodChecks || 0}/${m.totalChecks || 0}
-                </span>
-            </div>
-            <div class="card-actions">
-                <button onclick="viewMonitor('${m.id}')" class="btn btn-info btn-sm">
-                    <i class="fas fa-eye"></i> Xem
-                </button>
-                <button onclick="deleteMonitor('${m.id}')" class="btn btn-danger btn-sm">
-                    <i class="fas fa-trash"></i> Xóa
-                </button>
-            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+}
+
+// ============================================
+// CHAT RENDER
+// ============================================
+function addChatMessage(msg) {
+    const container = elements.chatMessages;
+    const isSelf = currentUser && msg.user === currentUser.user;
+    
+    const html = `
+        <div class="chat-message ${isSelf ? 'self' : 'other'}">
+            <div class="msg-user">${escapeHtml(msg.user)}</div>
+            <div class="msg-content">${escapeHtml(msg.content)}</div>
+            <div class="msg-time">${formatTime(msg.timestamp)}</div>
         </div>
-    `).join('');
+    `;
+    
+    container.insertAdjacentHTML('beforeend', html);
+    container.scrollTop = container.scrollHeight;
+    
+    while (container.children.length > 300) {
+        container.removeChild(container.firstChild);
+    }
+}
+
+// ============================================
+// LOAD DATA FUNCTIONS - OPTIMIZED
+// ============================================
+const loadStatsDebounced = debounce(async function() {
+    try {
+        const data = await apiFetch('/stats');
+        if (data.err) return;
+
+        requestAnimationFrame(() => {
+            elements.totalApis.textContent = data.totalApis || 0;
+            elements.totalJobs.textContent = data.totalJobs || 0;
+            elements.totalUsers.textContent = data.totalUsers || 0;
+            elements.runningBots.textContent = data.runningBots || 0;
+
+            elements.apiCount.textContent = data.totalApis || 0;
+            elements.botCount.textContent = data.totalBots || 0;
+            elements.monitorCount.textContent = data.totalMonitors || 0;
+
+            if (elements.trendEnabledApis) elements.trendEnabledApis.textContent = data.enabledApis || 0;
+            if (elements.trendAvgJobs) elements.trendAvgJobs.textContent = data.avgJobsPerApi || 0;
+            if (elements.trendSessions) elements.trendSessions.textContent = data.activeSessions || 0;
+            if (elements.trendStoppedBots) elements.trendStoppedBots.textContent = data.stoppedBots || 0;
+
+            if (elements.statEnabledApis) {
+                elements.statEnabledApis.innerHTML = `${data.enabledApis || 0}<span class="detail-row-sub">/ ${data.totalApis || 0}</span>`;
+            }
+            if (elements.statPrivateApis) elements.statPrivateApis.textContent = data.privateApis || 0;
+            if (elements.statRunningBots) {
+                elements.statRunningBots.innerHTML = `${data.runningBots || 0}<span class="detail-row-sub">/ ${data.totalBots || 0}</span>`;
+            }
+            if (elements.statOnlineMonitors) {
+                elements.statOnlineMonitors.innerHTML = `${data.onlineMonitors || 0}<span class="detail-row-sub">/ ${data.totalMonitors || 0}</span>`;
+            }
+            if (elements.statActiveSessions) elements.statActiveSessions.textContent = data.activeSessions || 0;
+            if (elements.statAvgJobs) elements.statAvgJobs.textContent = data.avgJobsPerApi || 0;
+
+            renderUsersByRole(data.usersByRole);
+            renderTopApis(data.topApis);
+        });
+    } catch (e) {
+        console.error('Failed to load stats:', e);
+    }
+}, 200);
+
+const loadStats = loadStatsDebounced;
+
+async function loadApis() {
+    try {
+        const apis = await apiFetch('/my');
+        if (Array.isArray(apis)) {
+            requestAnimationFrame(() => renderApis(apis));
+        }
+    } catch (e) {
+        console.error('Failed to load APIs:', e);
+        showToast('Lỗi tải danh sách API', 'error');
+    }
+}
+
+async function loadBots() {
+    try {
+        const bots = await apiFetch('/bot/my');
+        if (Array.isArray(bots)) {
+            requestAnimationFrame(() => renderBots(bots));
+        }
+    } catch (e) {
+        console.error('Failed to load bots:', e);
+    }
+}
+
+async function loadMonitors() {
+    try {
+        const monitors = await apiFetch('/monitor/my');
+        if (Array.isArray(monitors)) {
+            requestAnimationFrame(() => renderMonitors(monitors));
+        }
+    } catch (e) {
+        console.error('Failed to load monitors:', e);
+    }
 }
 
 // ============================================
@@ -727,12 +815,12 @@ window.viewApi = async function(apiId) {
         }
         
         const bossList = Object.entries(data.bosses || {})
-            .map(([name, count]) => `<li>${name}: ${count} jobs</li>`)
+            .map(([name, count]) => `<li>${escapeHtml(name)}: ${count} jobs</li>`)
             .join('');
         
-        openModal(`📊 ${data.displayName || data.id}`, `
+        openModal(`📊 ${escapeHtml(data.displayName || data.id)}`, `
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <div><strong>ID:</strong> ${data.id}</div>
+                <div><strong>ID:</strong> ${escapeHtml(data.id)}</div>
                 <div><strong>Tổng jobs:</strong> ${data.totalJobs || 0}</div>
                 <div><strong>TTL:</strong> ${data.ttl / 1000}s</div>
                 <div><strong>Trạng thái:</strong> ${data.enabled ? '✅ Online' : '❌ Offline'}</div>
@@ -763,10 +851,10 @@ window.editApi = async function(apiId) {
             return;
         }
         
-        openModal(`✏️ Sửa API: ${api.displayName || api.name}`, `
+        openModal(`✏️ Sửa API: ${escapeHtml(api.displayName || api.name)}`, `
             <div class="form-group">
                 <label>Tên hiển thị</label>
-                <input type="text" id="editDisplayName" value="${api.displayName || ''}">
+                <input type="text" id="editDisplayName" value="${escapeHtml(api.displayName || '')}">
             </div>
             <div class="form-group">
                 <label>TTL (ms)</label>
@@ -774,15 +862,15 @@ window.editApi = async function(apiId) {
             </div>
             <div class="form-group">
                 <label>Webhook URL</label>
-                <input type="url" id="editWebhook" value="${api.webhook || ''}">
+                <input type="url" id="editWebhook" value="${escapeHtml(api.webhook || '')}">
             </div>
             <div class="form-group">
                 <label>Prefix</label>
-                <input type="text" id="editPrefix" value="${api.prefix || ''}">
+                <input type="text" id="editPrefix" value="${escapeHtml(api.prefix || '')}">
             </div>
             <div class="form-group">
                 <label>Suffix</label>
-                <input type="text" id="editSuffix" value="${api.suffix || ''}">
+                <input type="text" id="editSuffix" value="${escapeHtml(api.suffix || '')}">
             </div>
             <div class="form-group">
                 <div class="checkbox-group">
@@ -910,7 +998,7 @@ window.viewBotLogs = async function(botId) {
         }
         
         const logsHtml = data.logs.length > 0 
-            ? data.logs.map(log => `<div>${log}</div>`).join('')
+            ? data.logs.map(log => `<div>${escapeHtml(log)}</div>`).join('')
             : '<div style="color: var(--text-muted);">Không có logs</div>';
         
         openModal(`📋 Logs: ${botId}`, `
@@ -962,9 +1050,9 @@ window.viewMonitor = async function(monitorId) {
             </div>
         `).join('');
         
-        openModal(`📡 ${data.name}`, `
+        openModal(`📡 ${escapeHtml(data.name)}`, `
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <div><strong>URL:</strong> ${data.url}</div>
+                <div><strong>URL:</strong> ${escapeHtml(data.url)}</div>
                 <div><strong>Trạng thái:</strong> ${data.lastStatus}</div>
                 <div><strong>Uptime:</strong> ${data.uptime || 0}%</div>
                 <div><strong>Ping:</strong> ${data.lastPing || 0}ms</div>
@@ -1008,7 +1096,6 @@ window.deleteMonitor = async function(monitorId) {
 // ============================================
 // CREATE FUNCTIONS
 // ============================================
-// Create API
 elements.createApiBtn.addEventListener('click', () => {
     if (!currentUser) {
         showToast('Vui lòng đăng nhập để tạo API', 'error');
@@ -1079,7 +1166,6 @@ async function createApi() {
     }
 }
 
-// Create Bot
 elements.createBotBtn.addEventListener('click', () => {
     if (!currentUser) {
         showToast('Vui lòng đăng nhập để tạo bot', 'error');
@@ -1093,7 +1179,7 @@ elements.createBotBtn.addEventListener('click', () => {
         </div>
         <div class="form-group">
             <label>Mã nguồn Python <span style="color: var(--danger);">*</span></label>
-            <textarea id="createBotCode" placeholder="import discord&#10;from discord.ext import commands&#10;&#10;bot = commands.Bot(command_prefix='!')&#10;&#10;@bot.event&#10;async def on_ready():&#10;    print('Bot is ready!')&#10;&#10;bot.run('YOUR_TOKEN')"></textarea>
+            <textarea id="createBotCode" placeholder="import discord&#10;from discord.ext import commands&#10;&#10;bot = commands.Bot(command_prefix='!')&#10;&#10;@bot.event&#10;async def on_ready():&#10;    print('Bot is ready!')&#10;&#10;bot.run('YOUR_TOKEN')" style="min-height: 200px;"></textarea>
             <small style="color: var(--text-muted);">Paste mã nguồn Discord bot của bạn</small>
         </div>
         <div class="form-group">
@@ -1150,7 +1236,6 @@ async function createBot() {
     }
 }
 
-// Create Monitor
 elements.createMonitorBtn.addEventListener('click', () => {
     if (!currentUser) {
         showToast('Vui lòng đăng nhập để tạo monitor', 'error');
@@ -1283,31 +1368,6 @@ function connectChat() {
     };
 }
 
-function addChatMessage(msg) {
-    const isSelf = currentUser && msg.user === currentUser.user;
-    const div = document.createElement('div');
-    div.className = `chat-message ${isSelf ? 'self' : 'other'}`;
-    div.innerHTML = `
-        <div class="msg-user">${msg.user}</div>
-        <div class="msg-content">${escapeHtml(msg.content)}</div>
-        <div class="msg-time">${formatTime(msg.timestamp)}</div>
-    `;
-    elements.chatMessages.appendChild(div);
-    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// Chat send
-elements.chatSendBtn.addEventListener('click', sendChatMessage);
-elements.chatInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') sendChatMessage();
-});
-
 function sendChatMessage() {
     const content = elements.chatInput.value.trim();
     if (!content) return;
@@ -1320,32 +1380,51 @@ function sendChatMessage() {
     elements.chatInput.value = '';
 }
 
+elements.chatSendBtn.addEventListener('click', sendChatMessage);
+elements.chatInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendChatMessage();
+});
+
 // ============================================
 // INITIALIZATION
 // ============================================
 async function loadAllData() {
-    await loadStats();
-    await loadApis();
+    const promises = [loadStats(), loadApis()];
     if (currentUser) {
-        await loadBots();
-        await loadMonitors();
+        promises.push(loadBots(), loadMonitors());
+        connectChat();
     }
+    await Promise.all(promises);
 }
 
 async function init() {
     await checkAuth();
     await loadAllData();
     
-    if (currentUser) {
-        connectChat();
-    }
+    if (statsInterval) clearInterval(statsInterval);
+    statsInterval = setInterval(loadStats, 30000);
     
-    // Auto refresh stats every 30 seconds
-    setInterval(loadStats, 15000);
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.tab;
+            if (tab === 'bots' && elements.botList.children.length === 0) {
+                loadBots();
+            }
+            if (tab === 'monitors' && elements.monitorList.children.length === 0) {
+                loadMonitors();
+            }
+        });
+    });
+    
+    console.log('🚀 Job Queue System loaded successfully!');
 }
 
 // Start the app
-init();
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
+}
 
 // ============================================
 // GLOBAL ERROR HANDLING
@@ -1354,5 +1433,3 @@ window.addEventListener('unhandledrejection', (event) => {
     console.error('Unhandled promise rejection:', event.reason);
     showToast('Đã xảy ra lỗi, vui lòng thử lại', 'error');
 });
-
-console.log('🚀 Job Queue System loaded successfully!');
