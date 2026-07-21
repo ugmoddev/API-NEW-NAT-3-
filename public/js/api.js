@@ -256,6 +256,7 @@ function updateUI() {
         `;
         elements.authBtn.className = 'btn btn-primary';
     }
+    updateBackupButton();
 }
 
 // ============================================
@@ -454,7 +455,7 @@ async function register() {
 }
 
 // ============================================
-// RENDER FUNCTIONS - KHÔNG GIỚI HẠN
+// RENDER FUNCTIONS
 // ============================================
 const ROLE_LABELS = { owner: 'Owner', admin: 'Admin', member: 'Member' };
 
@@ -512,9 +513,7 @@ function renderApis(apis) {
         return;
     }
 
-    // Hiển thị TẤT CẢ API, không giới hạn
     let html = '';
-    
     for (const api of apis) {
         html += `
             <div class="api-card">
@@ -574,9 +573,7 @@ function renderBots(bots) {
         return;
     }
 
-    // Hiển thị TẤT CẢ bot, không giới hạn
     let html = '';
-    
     for (const bot of bots) {
         html += `
             <div class="bot-card">
@@ -639,9 +636,7 @@ function renderMonitors(monitors) {
         return;
     }
 
-    // Hiển thị TẤT CẢ monitor, không giới hạn
     let html = '';
-    
     for (const m of monitors) {
         html += `
             <div class="monitor-card">
@@ -708,7 +703,7 @@ function addChatMessage(msg) {
 }
 
 // ============================================
-// LOAD DATA FUNCTIONS - OPTIMIZED
+// LOAD DATA FUNCTIONS
 // ============================================
 const loadStatsDebounced = debounce(async function() {
     try {
@@ -1368,6 +1363,289 @@ elements.chatSendBtn.addEventListener('click', sendChatMessage);
 elements.chatInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendChatMessage();
 });
+
+// ============================================
+// BACKUP FUNCTIONS
+// ============================================
+
+// Hiển thị modal backup
+async function showBackupModal() {
+    if (!currentUser) {
+        showToast('Vui lòng đăng nhập để sử dụng tính năng backup', 'error');
+        return;
+    }
+    
+    if (!['owner', 'admin'].includes(currentUser.role)) {
+        showToast('Chỉ Owner và Admin mới có quyền backup', 'error');
+        return;
+    }
+    
+    openModal('💾 Backup & Restore Database', `
+        <div style="margin-bottom: 16px;">
+            <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+                <h4 style="margin: 0 0 8px 0;">📊 Thông tin hiện tại</h4>
+                <div id="backupStats" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9rem;">
+                    <div>Đang tải...</div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>🔑 Mật khẩu backup <span style="color: var(--danger);">*</span></label>
+                <input type="password" id="backupPassword" placeholder="Nhập mật khẩu backup">
+                <small style="color: var(--text-muted);">Mật khẩu mặc định: hoitatsuya@.,123</small>
+            </div>
+            
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px;">
+                <button onclick="downloadBackup()" class="btn btn-success" style="flex: 1;">
+                    <i class="fas fa-download"></i> Tải backup
+                </button>
+                <button onclick="saveBackupLocal()" class="btn btn-primary" style="flex: 1;">
+                    <i class="fas fa-save"></i> Lưu vào server
+                </button>
+            </div>
+            
+            <hr style="margin: 16px 0; border-color: var(--border-color);">
+            
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <button onclick="showRestoreModal()" class="btn btn-warning" style="flex: 1;">
+                    <i class="fas fa-upload"></i> Restore từ file
+                </button>
+            </div>
+        </div>
+    `);
+    
+    loadBackupStats();
+}
+
+// Load backup stats
+async function loadBackupStats() {
+    try {
+        const data = await apiFetch('/backup/info');
+        if (data.err) return;
+        
+        const statsHtml = `
+            <div><strong>API:</strong> ${data.stats.apis}</div>
+            <div><strong>Users:</strong> ${data.stats.users}</div>
+            <div><strong>Bots:</strong> ${data.stats.bots}</div>
+            <div><strong>Monitors:</strong> ${data.stats.monitors}</div>
+            <div><strong>Jobs:</strong> ${data.stats.totalJobs}</div>
+            <div><strong>Sessions:</strong> ${data.stats.sessions}</div>
+        `;
+        
+        document.getElementById('backupStats').innerHTML = statsHtml;
+    } catch (e) {
+        console.error('Failed to load backup stats:', e);
+    }
+}
+
+// Download backup
+async function downloadBackup() {
+    const password = document.getElementById('backupPassword').value.trim();
+    
+    if (!password) {
+        showToast('Vui lòng nhập mật khẩu backup', 'error');
+        return;
+    }
+    
+    try {
+        const btn = document.querySelector('.btn-success');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang tạo...';
+        }
+        
+        const data = await apiFetch('/backup/download', {
+            method: 'POST',
+            body: JSON.stringify({ password })
+        });
+        
+        if (data.err) {
+            showToast(data.err, 'error');
+            return;
+        }
+        
+        const blob = new Blob([data.backup], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `backup_${new Date(data.timestamp).toISOString().slice(0,10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showToast(`✅ Backup tạo thành công! (${(data.size / 1024).toFixed(2)} KB)`, 'success');
+        closeModal();
+    } catch (e) {
+        showToast('Lỗi tạo backup: ' + e.message, 'error');
+    } finally {
+        const btn = document.querySelector('.btn-success');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-download"></i> Tải backup';
+        }
+    }
+}
+
+// Save backup to server
+async function saveBackupLocal() {
+    const password = document.getElementById('backupPassword').value.trim();
+    
+    if (!password) {
+        showToast('Vui lòng nhập mật khẩu backup', 'error');
+        return;
+    }
+    
+    try {
+        const btn = document.querySelector('.btn-primary');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang lưu...';
+        }
+        
+        const data = await apiFetch('/backup/save-local', {
+            method: 'POST',
+            body: JSON.stringify({ password })
+        });
+        
+        if (data.err) {
+            showToast(data.err, 'error');
+            return;
+        }
+        
+        showToast(`✅ Backup đã lưu vào server: ${data.filename} (${(data.size / 1024).toFixed(2)} KB)`, 'success');
+        closeModal();
+    } catch (e) {
+        showToast('Lỗi lưu backup: ' + e.message, 'error');
+    } finally {
+        const btn = document.querySelector('.btn-primary');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-save"></i> Lưu vào server';
+        }
+    }
+}
+
+// Show restore modal
+function showRestoreModal() {
+    const password = document.getElementById('backupPassword').value.trim();
+    
+    if (!password) {
+        showToast('Vui lòng nhập mật khẩu backup trước khi restore', 'error');
+        return;
+    }
+    
+    openModal('📤 Restore Database', `
+        <div style="margin-bottom: 16px;">
+            <div style="background: #fff3cd; padding: 12px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 16px;">
+                <strong>⚠️ Cảnh báo:</strong> Restore sẽ <strong>thay thế toàn bộ dữ liệu hiện tại</strong> bằng dữ liệu từ backup. 
+                Hãy chắc chắn bạn đã tạo backup hiện tại trước khi tiếp tục.
+            </div>
+            
+            <div class="form-group">
+                <label>Chọn file backup <span style="color: var(--danger);">*</span></label>
+                <input type="file" id="restoreFile" accept=".json" style="padding: 8px; border: 1px solid var(--border-color); border-radius: 8px; width: 100%;">
+                <small style="color: var(--text-muted);">Chọn file backup đã tải về hoặc từ server</small>
+            </div>
+            
+            <div class="form-group">
+                <label>🔑 Mật khẩu backup <span style="color: var(--danger);">*</span></label>
+                <input type="password" id="restorePassword" value="${password}" placeholder="Nhập mật khẩu backup">
+            </div>
+            
+            <div class="form-actions" style="margin-top: 16px;">
+                <button onclick="closeModal()" class="btn btn-danger">Hủy</button>
+                <button onclick="restoreBackup()" class="btn btn-warning">
+                    <i class="fas fa-exclamation-triangle"></i> Xác nhận Restore
+                </button>
+            </div>
+        </div>
+    `);
+}
+
+// Restore backup
+async function restoreBackup() {
+    const fileInput = document.getElementById('restoreFile');
+    const password = document.getElementById('restorePassword').value.trim();
+    
+    if (!fileInput.files || !fileInput.files[0]) {
+        showToast('Vui lòng chọn file backup', 'error');
+        return;
+    }
+    
+    if (!password) {
+        showToast('Vui lòng nhập mật khẩu backup', 'error');
+        return;
+    }
+    
+    if (!confirm('⚠️ Bạn có chắc chắn muốn RESTORE toàn bộ dữ liệu? Hành động này KHÔNG THỂ HOÀN TÁC!')) {
+        return;
+    }
+    
+    try {
+        const btn = document.querySelector('.btn-warning');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang restore...';
+        }
+        
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+        
+        reader.onload = async function(e) {
+            try {
+                const backupData = e.target.result;
+                
+                const data = await apiFetch('/backup/restore', {
+                    method: 'POST',
+                    body: JSON.stringify({ password, backup: backupData })
+                });
+                
+                if (data.err) {
+                    showToast(data.err, 'error');
+                    return;
+                }
+                
+                showToast(`✅ Restore thành công! Đã khôi phục ${data.stats.apis} API, ${data.stats.users} users, ${data.stats.bots} bots, ${data.stats.monitors} monitors`, 'success');
+                closeModal();
+                
+                await loadAllData();
+                
+            } catch (error) {
+                showToast('Lỗi restore: ' + error.message, 'error');
+            }
+        };
+        
+        reader.readAsText(file);
+        
+    } catch (e) {
+        showToast('Lỗi restore: ' + e.message, 'error');
+    } finally {
+        const btn = document.querySelector('.btn-warning');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Xác nhận Restore';
+        }
+    }
+}
+
+// ============================================
+// BACKUP BUTTON HANDLER
+// ============================================
+const backupBtn = document.getElementById('backupBtn');
+if (backupBtn) {
+    backupBtn.addEventListener('click', showBackupModal);
+}
+
+function updateBackupButton() {
+    if (backupBtn) {
+        if (currentUser && ['owner', 'admin'].includes(currentUser.role)) {
+            backupBtn.style.display = 'inline-flex';
+        } else {
+            backupBtn.style.display = 'none';
+        }
+    }
+}
 
 // ============================================
 // INITIALIZATION
