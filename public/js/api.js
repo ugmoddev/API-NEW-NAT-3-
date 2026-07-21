@@ -66,6 +66,8 @@ const elements = {
     chatCount: $('chatCount'),
 };
 
+console.log('✅ DOM elements loaded');
+
 // ============================================
 // UTILITY FUNCTIONS
 // ============================================
@@ -245,7 +247,6 @@ function updateUI() {
         `;
         elements.authBtn.className = 'btn btn-primary';
     }
-    updateAdminButtons();
 }
 
 // ============================================
@@ -1354,21 +1355,11 @@ elements.chatInput.addEventListener('keypress', (e) => {
 });
 
 // ============================================
-// DOWNLOAD DB FUNCTIONS
+// DOWNLOAD DB FUNCTIONS - KHÔNG CẦN ROLE
 // ============================================
 
-// Tải DB trực tiếp về máy
 async function downloadDatabase() {
-    if (!currentUser) {
-        showToast('Vui lòng đăng nhập để tải DB', 'error');
-        return;
-    }
-    
-    if (!['owner', 'admin'].includes(currentUser.role)) {
-        showToast('Chỉ Owner và Admin mới có quyền tải DB', 'error');
-        return;
-    }
-    
+    console.log('📥 downloadDatabase called');
     openModal('📥 Tải Database', `
         <div style="margin-bottom: 16px;">
             <div style="background: #e8f5e9; padding: 12px; border-radius: 8px; border-left: 4px solid #4caf50; margin-bottom: 16px;">
@@ -1406,8 +1397,8 @@ async function downloadDatabase() {
     }
 }
 
-// Xác nhận tải DB
 async function confirmDownloadDb() {
+    console.log('🔑 confirmDownloadDb called');
     const password = document.getElementById('downloadDbPassword').value.trim();
     
     if (!password) {
@@ -1428,6 +1419,7 @@ async function confirmDownloadDb() {
             method: 'POST',
             body: JSON.stringify({ password })
         });
+        console.log('📦 Backup data received:', data);
         
         if (data.err) {
             showToast(data.err, 'error');
@@ -1467,6 +1459,7 @@ async function confirmDownloadDb() {
         }, 2000);
         
     } catch (e) {
+        console.error('❌ Lỗi tải DB:', e);
         showToast('Lỗi tải DB: ' + e.message, 'error');
         if (statusDiv) {
             statusDiv.innerHTML = `<i class="fas fa-exclamation-circle" style="color: var(--danger);"></i> Lỗi: ${e.message}`;
@@ -1477,20 +1470,11 @@ async function confirmDownloadDb() {
 }
 
 // ============================================
-// BACKUP FUNCTIONS
+// BACKUP FUNCTIONS - KHÔNG CẦN ROLE
 // ============================================
 
 async function showBackupModal() {
-    if (!currentUser) {
-        showToast('Vui lòng đăng nhập để sử dụng tính năng backup', 'error');
-        return;
-    }
-    
-    if (!['owner', 'admin'].includes(currentUser.role)) {
-        showToast('Chỉ Owner và Admin mới có quyền backup', 'error');
-        return;
-    }
-    
+    console.log('💾 showBackupModal called');
     openModal('💾 Backup & Restore Database', `
         <div style="margin-bottom: 16px;">
             <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
@@ -1858,29 +1842,36 @@ async function refreshBackupList() {
 }
 
 // ============================================
-// ADMIN BUTTONS
+// BUTTON EVENTS - QUAN TRỌNG
 // ============================================
-const downloadDbBtn = document.getElementById('downloadDbBtn');
-const backupBtn = document.getElementById('backupBtn');
-
-if (downloadDbBtn) {
-    downloadDbBtn.addEventListener('click', downloadDatabase);
-}
-
-if (backupBtn) {
-    backupBtn.addEventListener('click', showBackupModal);
-}
-
-function updateAdminButtons() {
-    const isAdmin = currentUser && ['owner', 'admin'].includes(currentUser.role);
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🔄 DOM fully loaded, attaching events...');
     
-    if (downloadDbBtn) {
-        downloadDbBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+    const downloadBtn = document.getElementById('downloadDbBtn');
+    const backupBtn = document.getElementById('backupBtn');
+    
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('📥 Download DB button clicked');
+            downloadDatabase();
+        });
+        console.log('✅ Download DB button event attached');
+    } else {
+        console.error('❌ downloadDbBtn not found');
     }
+    
     if (backupBtn) {
-        backupBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+        backupBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('💾 Backup button clicked');
+            showBackupModal();
+        });
+        console.log('✅ Backup button event attached');
+    } else {
+        console.error('❌ backupBtn not found');
     }
-}
+});
 
 // ============================================
 // INITIALIZATION
