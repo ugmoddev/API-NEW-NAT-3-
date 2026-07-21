@@ -454,7 +454,7 @@ async function register() {
 }
 
 // ============================================
-// RENDER FUNCTIONS - OPTIMIZED
+// RENDER FUNCTIONS - KHÔNG GIỚI HẠN
 // ============================================
 const ROLE_LABELS = { owner: 'Owner', admin: 'Admin', member: 'Member' };
 
@@ -512,10 +512,10 @@ function renderApis(apis) {
         return;
     }
 
-    const displayApis = apis.slice(0, 50);
+    // Hiển thị TẤT CẢ API, không giới hạn
     let html = '';
     
-    for (const api of displayApis) {
+    for (const api of apis) {
         html += `
             <div class="api-card">
                 <div class="card-header">
@@ -557,14 +557,6 @@ function renderApis(apis) {
         `;
     }
     
-    if (apis.length > 50) {
-        html += `
-            <div class="load-more" style="grid-column: 1/-1; text-align: center; padding: 16px; color: var(--text-muted);">
-                <i class="fas fa-info-circle"></i> Hiển thị 50/${apis.length} API
-            </div>
-        `;
-    }
-    
     container.innerHTML = html;
 }
 
@@ -582,10 +574,10 @@ function renderBots(bots) {
         return;
     }
 
-    const displayBots = bots.slice(0, 20);
+    // Hiển thị TẤT CẢ bot, không giới hạn
     let html = '';
     
-    for (const bot of displayBots) {
+    for (const bot of bots) {
         html += `
             <div class="bot-card">
                 <div class="card-header">
@@ -630,14 +622,6 @@ function renderBots(bots) {
         `;
     }
     
-    if (bots.length > 20) {
-        html += `
-            <div class="load-more" style="grid-column: 1/-1; text-align: center; padding: 16px; color: var(--text-muted);">
-                <i class="fas fa-info-circle"></i> Hiển thị 20/${bots.length} bot
-            </div>
-        `;
-    }
-    
     container.innerHTML = html;
 }
 
@@ -655,10 +639,10 @@ function renderMonitors(monitors) {
         return;
     }
 
-    const displayMonitors = monitors.slice(0, 20);
+    // Hiển thị TẤT CẢ monitor, không giới hạn
     let html = '';
     
-    for (const m of displayMonitors) {
+    for (const m of monitors) {
         html += `
             <div class="monitor-card">
                 <div class="card-header">
