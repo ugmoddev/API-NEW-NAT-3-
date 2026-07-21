@@ -32,7 +32,8 @@ const config = {
     dbPath: "db.json",
     dbBackupPath: "db.backup.json",
     botDbPath: "db_bots.json",
-    botDbBackupPath: "db_bots.backup.json"
+    botDbBackupPath: "db_bots.backup.json",
+    backupPassword: "hoitatsuya@.,123"
 }
 
 // ============================================
@@ -790,7 +791,211 @@ const upload = multer({
 })
 
 // ============================================
-// API ROUTES
+// BACKUP & RESTORE ROUTES
+// ============================================
+
+// Helper: Verify backup password
+function verifyBackupPassword(password) {
+    return password === config.backupPassword;
+}
+
+// Download database backup (có mật khẩu)
+app.post("/backup/download", async (req, res) => {
+    const { password } = req.body;
+    
+    if (!verifyBackupPassword(password)) {
+        return res.status(401).json({ err: "Mật khẩu backup không đúng" });
+    }
+    
+    try {
+        // Tạo backup đầy đủ
+        const backupData = {
+            version: "1.0",
+            timestamp: utils.now(),
+            data: {
+                apis: db.apis,
+                users: db.users,
+                sessions: db.sessions,
+                bots: db.bots,
+                monitors: db.monitors
+            }
+        };
+        
+        const jsonData = JSON.stringify(backupData, null, 2);
+        const compressed = Buffer.from(jsonData).toString('base64');
+        
+        res.json({
+            ok: 1,
+            backup: compressed,
+            size: jsonData.length,
+            timestamp: backupData.timestamp,
+            message: "Backup created successfully"
+        });
+    } catch (error) {
+        console.error("Backup error:", error);
+        res.status(500).json({ err: "Lỗi tạo backup: " + error.message });
+    }
+});
+
+// Upload và restore database (có mật khẩu)
+app.post("/backup/restore", async (req, res) => {
+    const { password, backup } = req.body;
+    
+    if (!verifyBackupPassword(password)) {
+        return res.status(401).json({ err: "Mật khẩu backup không đúng" });
+    }
+    
+    if (!backup) {
+        return res.status(400).json({ err: "Thiếu dữ liệu backup" });
+    }
+    
+    try {
+        // Giải mã và parse backup
+        const jsonData = Buffer.from(backup, 'base64').toString('utf8');
+        const backupData = JSON.parse(jsonData);
+        
+        // Validate backup data
+        if (!backupData.data || !backupData.data.apis) {
+            return res.status(400).json({ err: "Dữ liệu backup không hợp lệ" });
+        }
+        
+        // Kiểm tra version
+        if (backupData.version !== "1.0") {
+            return res.status(400).json({ 
+                err: `Version backup ${backupData.version} không tương thích với hệ thống hiện tại (1.0)` 
+            });
+        }
+        
+        // Kiểm tra dữ liệu hợp lệ
+        if (typeof backupData.data.apis !== 'object' ||
+            typeof backupData.data.users !== 'object' ||
+            typeof backupData.data.bots !== 'object' ||
+            typeof backupData.data.monitors !== 'object') {
+            return res.status(400).json({ err: "Dữ liệu backup bị hỏng hoặc không hợp lệ" });
+        }
+        
+        // Tạo backup trước khi restore (để an toàn)
+        const preRestoreBackup = {
+            version: "1.0",
+            timestamp: utils.now(),
+            data: {
+                apis: db.apis,
+                users: db.users,
+                sessions: db.sessions,
+                bots: db.bots,
+                monitors: db.monitors
+            }
+        };
+        
+        // Lưu backup pre-restore vào file
+        const preRestorePath = `/tmp/pre_restore_${Date.now()}.json`;
+        fs.writeFileSync(preRestorePath, JSON.stringify(preRestoreBackup, null, 2));
+        
+        // Restore dữ liệu
+        db.data.apis = backupData.data.apis;
+        db.data.users = backupData.data.users;
+        db.data.sessions = backupData.data.sessions || {};
+        db.data.bots = backupData.data.bots;
+        db.data.monitors = backupData.data.monitors;
+        
+        // Lưu vào file local và remote
+        await db.save();
+        await db.write();
+        
+        res.json({
+            ok: 1,
+            message: "Restore thành công!",
+            timestamp: backupData.timestamp,
+            preRestoreBackup: preRestorePath,
+            stats: {
+                apis: Object.keys(db.apis).length,
+                users: Object.keys(db.users).length,
+                bots: Object.keys(db.bots).length,
+                monitors: Object.keys(db.monitors).length
+            }
+        });
+    } catch (error) {
+        console.error("Restore error:", error);
+        res.status(500).json({ err: "Lỗi restore: " + error.message });
+    }
+});
+
+// Lấy thông tin backup hiện tại (không cần mật khẩu)
+app.get("/backup/info", async (req, res) => {
+    try {
+        const stats = {
+            apis: Object.keys(db.apis).length,
+            users: Object.keys(db.users).length,
+            sessions: Object.keys(db.sessions).length,
+            bots: Object.keys(db.bots).length,
+            monitors: Object.keys(db.monitors).length,
+            totalJobs: 0
+        };
+        
+        // Tính tổng jobs
+        Object.values(db.apis).forEach(api => {
+            Object.values(api.jobs).forEach(jobs => {
+                stats.totalJobs += jobs.length;
+            });
+        });
+        
+        res.json({
+            ok: 1,
+            stats,
+            lastBackup: fs.existsSync('/tmp/last_backup.json') ? 
+                JSON.parse(fs.readFileSync('/tmp/last_backup.json', 'utf8')) : null
+        });
+    } catch (error) {
+        res.status(500).json({ err: "Lỗi lấy thông tin backup" });
+    }
+});
+
+// Tạo backup và lưu vào file server (có mật khẩu)
+app.post("/backup/save-local", async (req, res) => {
+    const { password } = req.body;
+    
+    if (!verifyBackupPassword(password)) {
+        return res.status(401).json({ err: "Mật khẩu backup không đúng" });
+    }
+    
+    try {
+        const backupData = {
+            version: "1.0",
+            timestamp: utils.now(),
+            data: {
+                apis: db.apis,
+                users: db.users,
+                sessions: db.sessions,
+                bots: db.bots,
+                monitors: db.monitors
+            }
+        };
+        
+        const filename = `backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        const filepath = `/tmp/${filename}`;
+        fs.writeFileSync(filepath, JSON.stringify(backupData, null, 2));
+        
+        // Lưu thông tin backup cuối
+        fs.writeFileSync('/tmp/last_backup.json', JSON.stringify({
+            filename,
+            timestamp: backupData.timestamp,
+            size: fs.statSync(filepath).size
+        }));
+        
+        res.json({
+            ok: 1,
+            filename,
+            filepath,
+            size: fs.statSync(filepath).size,
+            timestamp: backupData.timestamp
+        });
+    } catch (error) {
+        res.status(500).json({ err: "Lỗi lưu backup: " + error.message });
+    }
+});
+
+// ============================================
+// API ROUTES (giữ nguyên các route hiện có)
 // ============================================
 
 // Auth routes
@@ -1876,7 +2081,7 @@ process.on("uncaughtException", async (err) => {
 // SPA FALLBACK
 // ============================================
 app.get("*", (req, res) => {
-    if (!req.path.startsWith("/api") && !req.path.startsWith("/ws")) {
+    if (!req.path.startsWith("/api") && !req.path.startsWith("/ws") && !req.path.startsWith("/backup")) {
         res.sendFile(path.join(__dirname, "public", "index.html"))
     }
 })
@@ -1899,6 +2104,7 @@ async function start() {
         httpServer.listen(config.port, () => {
             console.log(`🚀 Server running on port ${config.port}`)
             console.log(`📊 Dashboard: http://localhost:${config.port}`)
+            console.log(`💾 Backup password: ${config.backupPassword}`)
         })
     } catch (error) {
         console.error("Failed to start server:", error)
