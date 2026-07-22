@@ -1487,7 +1487,6 @@ async function showBackupModal() {
             <div class="form-group">
                 <label>🔑 Mật khẩu backup <span style="color: var(--danger);">*</span></label>
                 <input type="password" id="backupPassword" placeholder="Nhập mật khẩu backup">
-                <small style="color: var(--text-muted);">Mật khẩu mặc định: hoitatsuya@.,123</small>
             </div>
             
             <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px;">
