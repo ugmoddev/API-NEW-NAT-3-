@@ -1374,7 +1374,6 @@ async function downloadDatabase() {
             <div class="form-group">
                 <label>🔑 Mật khẩu <span style="color: var(--danger);">*</span></label>
                 <input type="password" id="downloadDbPassword" placeholder="Nhập mật khẩu" style="font-size: 1.1rem; padding: 12px;">
-                <small style="color: var(--text-muted);">Mật khẩu mặc định: <strong>hoitatsuya@.,123</strong></small>
             </div>
             
             <div id="downloadDbStatus" style="margin-top: 12px; padding: 10px; border-radius: 8px; display: none; text-align: center;">
