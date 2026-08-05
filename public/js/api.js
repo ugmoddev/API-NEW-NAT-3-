@@ -5,6 +5,8 @@
 // ===== CONFIGURATION =====
 const CONFIG = {
     API_BASE: window.location.origin,
+    // Nếu server chạy ở port khác, sửa ở đây:
+    // API_BASE: 'http://localhost:3000',
     REFRESH_INTERVAL: 30000,
     CHAT_REFRESH_INTERVAL: 3000,
     MAX_RETRIES: 3,
@@ -169,6 +171,12 @@ const Utils = {
 
     isValidPassword(password) {
         return password && password.length >= 6;
+    },
+
+    // Thêm hàm kiểm tra response có phải JSON không
+    isJSONResponse(response) {
+        const contentType = response.headers.get('content-type');
+        return contentType && contentType.includes('application/json');
     }
 };
 
@@ -181,6 +189,8 @@ class ApiClient {
 
     async request(endpoint, options = {}) {
         const url = `${this.baseUrl}${endpoint}`;
+        console.log('📡 API Request:', url, options.method || 'GET');
+        
         const config = {
             headers: {
                 'Content-Type': 'application/json',
@@ -195,9 +205,17 @@ class ApiClient {
 
         try {
             const response = await fetch(url, config);
+            
+            // Kiểm tra response có phải JSON không
+            if (!Utils.isJSONResponse(response)) {
+                const text = await response.text();
+                console.error('❌ Server returned HTML instead of JSON:', text.substring(0, 200));
+                throw new Error('Server không trả về JSON. Vui lòng kiểm tra API endpoint.');
+            }
+
             const data = await response.json();
             
-            // Nếu là lỗi 401 (Unauthorized) => chưa đăng nhập
+            // Xử lý lỗi 401
             if (response.status === 401) {
                 state.user = null;
                 if (window.app) {
@@ -212,11 +230,17 @@ class ApiClient {
             }
             
             this.retryCount = 0;
+            console.log('✅ API Response:', data);
             return data;
         } catch (error) {
-            console.error(`API Error [${endpoint}]:`, error);
-            if (this.retryCount < CONFIG.MAX_RETRIES && error.message !== 'Vui lòng đăng nhập để tiếp tục') {
+            console.error(`❌ API Error [${endpoint}]:`, error);
+            
+            // Retry logic
+            if (this.retryCount < CONFIG.MAX_RETRIES && 
+                error.message !== 'Vui lòng đăng nhập để tiếp tục' &&
+                error.message !== 'Server không trả về JSON. Vui lòng kiểm tra API endpoint.') {
                 this.retryCount++;
+                console.log(`🔄 Retry ${this.retryCount}/${CONFIG.MAX_RETRIES}`);
                 await Utils.sleep(CONFIG.RETRY_DELAY * this.retryCount);
                 return this.request(endpoint, options);
             }
@@ -361,7 +385,11 @@ class ApiClient {
     // ===== SYSTEM =====
     async downloadDb() {
         const response = await fetch(`${this.baseUrl}/api/system/download-db`);
-        if (!response.ok) throw new Error('Download failed');
+        if (!response.ok) {
+            const text = await response.text();
+            console.error('Download DB error:', text);
+            throw new Error('Download failed');
+        }
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -375,6 +403,16 @@ class ApiClient {
         return this.request('/api/system/backup', {
             method: 'POST',
         });
+    }
+
+    // ===== HEALTH CHECK =====
+    async healthCheck() {
+        try {
+            const response = await fetch(`${this.baseUrl}/api/health`);
+            return response.ok;
+        } catch {
+            return false;
+        }
     }
 }
 
@@ -416,19 +454,19 @@ class Toast {
     }
 
     success(message, duration) {
-        this.show(message, 'success', duration);
+        this.show(message, 'success', duration || 3000);
     }
 
     error(message, duration) {
-        this.show(message, 'error', duration);
+        this.show(message, 'error', duration || 4000);
     }
 
     warning(message, duration) {
-        this.show(message, 'warning', duration);
+        this.show(message, 'warning', duration || 3000);
     }
 
     info(message, duration) {
-        this.show(message, 'info', duration);
+        this.show(message, 'info', duration || 3000);
     }
 }
 
@@ -477,12 +515,33 @@ class JobQueueApp {
         this.init();
     }
 
-    init() {
+    async init() {
+        // Kiểm tra server
+        const isServerRunning = await this.checkServer();
+        if (!isServerRunning) {
+            this.toast.error('⚠️ Không thể kết nối đến server. Vui lòng kiểm tra server đang chạy!', 5000);
+            // Vẫn tiếp tục nhưng sẽ hiển thị lỗi khi gọi API
+        }
+        
         this.setupEventListeners();
-        this.checkSession();
-        this.loadData();
+        await this.checkSession();
+        await this.loadData();
         this.setupAutoRefresh();
         state.isInitialized = true;
+    }
+
+    // ===== SERVER CHECK =====
+    async checkServer() {
+        try {
+            const isHealthy = await this.api.healthCheck();
+            if (isHealthy) {
+                console.log('✅ Server is running');
+                return true;
+            }
+        } catch (error) {
+            console.error('❌ Server check failed:', error);
+        }
+        return false;
     }
 
     // ===== SESSION CHECK =====
@@ -491,12 +550,13 @@ class JobQueueApp {
             const user = await this.api.getCurrentUser();
             if (user && user.id) {
                 state.user = user;
+                console.log('👤 User logged in:', user.username);
             } else {
                 state.user = null;
             }
         } catch (error) {
             state.user = null;
-            console.log('Chưa đăng nhập hoặc session hết hạn');
+            console.log('👤 No active session');
         }
         this.updateUserUI();
     }
@@ -878,7 +938,9 @@ class JobQueueApp {
             }
         } catch (error) {
             console.error('Load data error:', error);
-            // Nếu lỗi 401 thì đã được xử lý trong API client
+            if (error.message !== 'Vui lòng đăng nhập để tiếp tục') {
+                this.toast.error('Lỗi tải dữ liệu: ' + error.message);
+            }
         }
     }
 
@@ -888,6 +950,9 @@ class JobQueueApp {
             this.updateStats(stats);
         } catch (error) {
             console.error('Load stats error:', error);
+            if (error.message !== 'Vui lòng đăng nhập để tiếp tục') {
+                this.toast.error('Không thể tải thống kê');
+            }
         }
     }
 
@@ -977,7 +1042,15 @@ class JobQueueApp {
         } catch (error) {
             console.error('Load APIs error:', error);
             if (error.message !== 'Vui lòng đăng nhập để tiếp tục') {
-                DOM.apiList.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Không thể tải danh sách API</p></div>';
+                DOM.apiList.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-exclamation-circle" style="color:var(--danger);"></i>
+                        <p style="color:var(--danger);">Lỗi tải API: ${Utils.escapeHTML(error.message)}</p>
+                        <button class="btn btn-primary" onclick="app.loadApis()" style="margin-top:10px;">
+                            <i class="fas fa-sync"></i> Thử lại
+                        </button>
+                    </div>
+                `;
             }
         }
     }
@@ -1092,7 +1165,7 @@ class JobQueueApp {
             }
 
             try {
-                await this.api.createApi(data);
+                const result = await this.api.createApi(data);
                 this.toast.success('Tạo API thành công!');
                 this.modal.close();
                 await this.loadApis();
@@ -1119,7 +1192,7 @@ class JobQueueApp {
             await this.loadApis();
             await this.loadStats();
         } catch (error) {
-            this.toast.error('Thao tác thất bại');
+            this.toast.error('Thao tác thất bại: ' + error.message);
         }
     }
 
@@ -1131,7 +1204,10 @@ class JobQueueApp {
         }
 
         const api = state.data.apis.find(a => a.id === id);
-        if (!api) return;
+        if (!api) {
+            this.toast.error('Không tìm thấy API');
+            return;
+        }
 
         const html = `
             <form id="editApiForm" class="modal-form">
@@ -1205,7 +1281,7 @@ class JobQueueApp {
             await this.loadApis();
             await this.loadStats();
         } catch (error) {
-            this.toast.error('Xóa API thất bại');
+            this.toast.error('Xóa API thất bại: ' + error.message);
         }
     }
 
@@ -1219,7 +1295,15 @@ class JobQueueApp {
         } catch (error) {
             console.error('Load bots error:', error);
             if (error.message !== 'Vui lòng đăng nhập để tiếp tục') {
-                DOM.botList.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Không thể tải danh sách bot</p></div>';
+                DOM.botList.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-exclamation-circle" style="color:var(--danger);"></i>
+                        <p style="color:var(--danger);">Lỗi tải bot: ${Utils.escapeHTML(error.message)}</p>
+                        <button class="btn btn-primary" onclick="app.loadBots()" style="margin-top:10px;">
+                            <i class="fas fa-sync"></i> Thử lại
+                        </button>
+                    </div>
+                `;
             }
         }
     }
@@ -1345,7 +1429,7 @@ class JobQueueApp {
             await this.loadBots();
             await this.loadStats();
         } catch (error) {
-            this.toast.error('Khởi động bot thất bại');
+            this.toast.error('Khởi động bot thất bại: ' + error.message);
         }
     }
 
@@ -1362,7 +1446,7 @@ class JobQueueApp {
             await this.loadBots();
             await this.loadStats();
         } catch (error) {
-            this.toast.error('Dừng bot thất bại');
+            this.toast.error('Dừng bot thất bại: ' + error.message);
         }
     }
 
@@ -1374,7 +1458,10 @@ class JobQueueApp {
         }
 
         const bot = state.data.bots.find(b => b.id === id);
-        if (!bot) return;
+        if (!bot) {
+            this.toast.error('Không tìm thấy bot');
+            return;
+        }
 
         const html = `
             <form id="editBotForm" class="modal-form">
@@ -1438,7 +1525,7 @@ class JobQueueApp {
             await this.loadBots();
             await this.loadStats();
         } catch (error) {
-            this.toast.error('Xóa bot thất bại');
+            this.toast.error('Xóa bot thất bại: ' + error.message);
         }
     }
 
@@ -1452,7 +1539,15 @@ class JobQueueApp {
         } catch (error) {
             console.error('Load monitors error:', error);
             if (error.message !== 'Vui lòng đăng nhập để tiếp tục') {
-                DOM.monitorList.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Không thể tải danh sách monitor</p></div>';
+                DOM.monitorList.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-exclamation-circle" style="color:var(--danger);"></i>
+                        <p style="color:var(--danger);">Lỗi tải monitor: ${Utils.escapeHTML(error.message)}</p>
+                        <button class="btn btn-primary" onclick="app.loadMonitors()" style="margin-top:10px;">
+                            <i class="fas fa-sync"></i> Thử lại
+                        </button>
+                    </div>
+                `;
             }
         }
     }
@@ -1572,7 +1667,10 @@ class JobQueueApp {
         }
 
         const monitor = state.data.monitors.find(m => m.id === id);
-        if (!monitor) return;
+        if (!monitor) {
+            this.toast.error('Không tìm thấy monitor');
+            return;
+        }
 
         const html = `
             <form id="editMonitorForm" class="modal-form">
@@ -1636,7 +1734,7 @@ class JobQueueApp {
             await this.loadMonitors();
             await this.loadStats();
         } catch (error) {
-            this.toast.error('Xóa monitor thất bại');
+            this.toast.error('Xóa monitor thất bại: ' + error.message);
         }
     }
 
@@ -1667,6 +1765,9 @@ class JobQueueApp {
             this.renderChatMessages(messages);
         } catch (error) {
             console.error('Load chat error:', error);
+            if (error.message !== 'Vui lòng đăng nhập để tiếp tục') {
+                this.toast.error('Không thể tải tin nhắn');
+            }
         }
     }
 
@@ -1716,7 +1817,7 @@ class JobQueueApp {
             DOM.chatInput.value = '';
             await this.loadChat();
         } catch (error) {
-            this.toast.error('Gửi tin nhắn thất bại');
+            this.toast.error('Gửi tin nhắn thất bại: ' + error.message);
         } finally {
             DOM.chatSendBtn.disabled = false;
         }
@@ -1734,7 +1835,7 @@ class JobQueueApp {
             await this.api.downloadDb();
             this.toast.success('Tải database thành công!');
         } catch (error) {
-            this.toast.error('Tải database thất bại');
+            this.toast.error('Tải database thất bại: ' + error.message);
         }
     }
 
@@ -1749,12 +1850,15 @@ class JobQueueApp {
             const result = await this.api.backup();
             this.toast.success(result.message || 'Backup thành công!');
         } catch (error) {
-            this.toast.error('Backup thất bại');
+            this.toast.error('Backup thất bại: ' + error.message);
         }
     }
 
     // ===== AUTO REFRESH =====
     setupAutoRefresh() {
+        if (this.refreshTimer) {
+            clearInterval(this.refreshTimer);
+        }
         this.refreshTimer = setInterval(() => {
             if (state.user && state.user.id) {
                 this.loadStats();
@@ -1770,11 +1874,11 @@ class JobQueueApp {
             clearInterval(this.chatTimer);
             this.chatTimer = null;
         }
-        this.chatTimer = setInterval(() => {
-            if (state.currentTab === 'chat' && state.user && state.user.id) {
+        if (state.currentTab === 'chat' && state.user && state.user.id) {
+            this.chatTimer = setInterval(() => {
                 this.loadChat();
-            }
-        }, CONFIG.CHAT_REFRESH_INTERVAL);
+            }, CONFIG.CHAT_REFRESH_INTERVAL);
+        }
     }
 
     // ===== CLEANUP =====
