@@ -1,5 +1,5 @@
 // ==============================
-// JOB QUEUE SYSTEM - OPTIMIZED
+// JOB QUEUE SYSTEM - COMPLETE
 // ==============================
 
 // ===== CONFIGURATION =====
@@ -104,6 +104,7 @@ const Utils = {
     },
 
     formatDate(date) {
+        if (!date) return 'N/A';
         return new Date(date).toLocaleString('vi-VN', {
             year: 'numeric',
             month: '2-digit',
@@ -151,6 +152,18 @@ const Utils = {
             'stopped': 'Đã dừng',
         };
         return textMap[status] || status;
+    },
+
+    isValidEmail(email) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    },
+
+    isValidUsername(username) {
+        return username && username.length >= 3 && /^[a-zA-Z0-9_]+$/.test(username);
+    },
+
+    isValidPassword(password) {
+        return password && password.length >= 6;
     }
 };
 
@@ -197,11 +210,18 @@ class ApiClient {
         }
     }
 
-    // Auth endpoints
+    // ===== AUTH ENDPOINTS =====
     async login(credentials) {
         return this.request('/api/auth/login', {
             method: 'POST',
             body: credentials,
+        });
+    }
+
+    async register(data) {
+        return this.request('/api/auth/register', {
+            method: 'POST',
+            body: data,
         });
     }
 
@@ -215,7 +235,7 @@ class ApiClient {
         return this.request('/api/auth/me');
     }
 
-    // API endpoints
+    // ===== API ENDPOINTS =====
     async getApis() {
         return this.request('/api/apis');
     }
@@ -240,7 +260,7 @@ class ApiClient {
         });
     }
 
-    // Bot endpoints
+    // ===== BOT ENDPOINTS =====
     async getBots() {
         return this.request('/api/bots');
     }
@@ -277,7 +297,7 @@ class ApiClient {
         });
     }
 
-    // Monitor endpoints
+    // ===== MONITOR ENDPOINTS =====
     async getMonitors() {
         return this.request('/api/monitors');
     }
@@ -302,7 +322,7 @@ class ApiClient {
         });
     }
 
-    // Chat endpoints
+    // ===== CHAT ENDPOINTS =====
     async getChatMessages() {
         return this.request('/api/chat/messages');
     }
@@ -318,12 +338,12 @@ class ApiClient {
         return this.request('/api/chat/online');
     }
 
-    // Stats
+    // ===== STATS =====
     async getStats() {
         return this.request('/api/stats');
     }
 
-    // System
+    // ===== SYSTEM =====
     async downloadDb() {
         const response = await fetch(`${this.baseUrl}/api/system/download-db`);
         if (!response.ok) throw new Error('Download failed');
@@ -421,7 +441,6 @@ class ModalManager {
         this.modal.style.display = 'flex';
         this.isOpen = true;
         document.body.style.overflow = 'hidden';
-        // Focus trap
         this.modal.focus();
     }
 
@@ -438,7 +457,6 @@ class JobQueueApp {
         this.api = new ApiClient();
         this.toast = new Toast();
         this.modal = new ModalManager();
-
         this.init();
     }
 
@@ -486,8 +504,42 @@ class JobQueueApp {
         if (state.user) {
             await this.logout();
         } else {
-            this.showLoginForm();
+            this.showAuthOptions();
         }
+    }
+
+    showAuthOptions() {
+        const html = `
+            <div style="text-align:center;padding:10px 0;">
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                    <button id="showLoginBtn" class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;">
+                        <i class="fas fa-sign-in-alt"></i> Đăng nhập
+                    </button>
+                    <button id="showRegisterBtn" class="btn btn-success" style="width:100%;justify-content:center;padding:12px;">
+                        <i class="fas fa-user-plus"></i> Đăng ký tài khoản mới
+                    </button>
+                    <button id="closeAuthModal" class="btn" style="width:100%;justify-content:center;background:transparent;color:var(--text-muted);">
+                        <i class="fas fa-times"></i> Hủy
+                    </button>
+                </div>
+            </div>
+        `;
+
+        this.modal.open('Chào mừng bạn', html);
+
+        document.getElementById('showLoginBtn').addEventListener('click', () => {
+            this.modal.close();
+            setTimeout(() => this.showLoginForm(), 300);
+        });
+
+        document.getElementById('showRegisterBtn').addEventListener('click', () => {
+            this.modal.close();
+            setTimeout(() => this.showRegisterForm(), 300);
+        });
+
+        document.getElementById('closeAuthModal').addEventListener('click', () => {
+            this.modal.close();
+        });
     }
 
     showLoginForm() {
@@ -501,16 +553,25 @@ class JobQueueApp {
                     <label for="loginPassword">Mật khẩu</label>
                     <input type="password" id="loginPassword" placeholder="Password" required>
                 </div>
-                <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">
+                <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;">
                     <i class="fas fa-sign-in-alt"></i> Đăng nhập
                 </button>
+                <div style="text-align:center;margin-top:12px;font-size:0.85rem;color:var(--text-muted);">
+                    Chưa có tài khoản? 
+                    <a href="#" id="switchToRegister" style="color:var(--primary);text-decoration:none;font-weight:600;">Đăng ký ngay</a>
+                </div>
             </form>
         `;
 
         this.modal.open('Đăng nhập', html);
 
-        const form = document.getElementById('loginForm');
-        form.addEventListener('submit', async (e) => {
+        document.getElementById('switchToRegister').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.modal.close();
+            setTimeout(() => this.showRegisterForm(), 300);
+        });
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const username = document.getElementById('loginUsername').value.trim();
             const password = document.getElementById('loginPassword').value;
@@ -528,6 +589,95 @@ class JobQueueApp {
                 await this.loadData();
             } catch (error) {
                 this.toast.error(error.message || 'Đăng nhập thất bại');
+            }
+        });
+    }
+
+    showRegisterForm() {
+        const html = `
+            <form id="registerForm" class="modal-form">
+                <div class="form-group">
+                    <label for="registerUsername">Tên đăng nhập</label>
+                    <input type="text" id="registerUsername" placeholder="Chọn tên đăng nhập" required autofocus>
+                    <small>Tối thiểu 3 ký tự, chỉ chữ và số</small>
+                </div>
+                <div class="form-group">
+                    <label for="registerEmail">Email</label>
+                    <input type="email" id="registerEmail" placeholder="Email của bạn" required>
+                </div>
+                <div class="form-group">
+                    <label for="registerPassword">Mật khẩu</label>
+                    <input type="password" id="registerPassword" placeholder="Tạo mật khẩu" required>
+                    <small>Tối thiểu 6 ký tự</small>
+                </div>
+                <div class="form-group">
+                    <label for="registerConfirmPassword">Xác nhận mật khẩu</label>
+                    <input type="password" id="registerConfirmPassword" placeholder="Nhập lại mật khẩu" required>
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="registerTerms" required>
+                    <label for="registerTerms">Tôi đồng ý với <a href="#" style="color:var(--primary);text-decoration:none;">Điều khoản sử dụng</a></label>
+                </div>
+                <button type="submit" class="btn btn-success" style="width:100%;justify-content:center;padding:12px;">
+                    <i class="fas fa-user-plus"></i> Đăng ký
+                </button>
+                <div style="text-align:center;margin-top:12px;font-size:0.85rem;color:var(--text-muted);">
+                    Đã có tài khoản? 
+                    <a href="#" id="switchToLogin" style="color:var(--primary);text-decoration:none;font-weight:600;">Đăng nhập</a>
+                </div>
+            </form>
+        `;
+
+        this.modal.open('Đăng ký tài khoản', html);
+
+        document.getElementById('switchToLogin').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.modal.close();
+            setTimeout(() => this.showLoginForm(), 300);
+        });
+
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('registerUsername').value.trim();
+            const email = document.getElementById('registerEmail').value.trim();
+            const password = document.getElementById('registerPassword').value;
+            const confirmPassword = document.getElementById('registerConfirmPassword').value;
+            const terms = document.getElementById('registerTerms').checked;
+
+            // Validation
+            if (!Utils.isValidUsername(username)) {
+                this.toast.warning('Tên đăng nhập phải có ít nhất 3 ký tự và chỉ chữ, số, gạch dưới');
+                return;
+            }
+
+            if (!Utils.isValidEmail(email)) {
+                this.toast.warning('Vui lòng nhập email hợp lệ');
+                return;
+            }
+
+            if (!Utils.isValidPassword(password)) {
+                this.toast.warning('Mật khẩu phải có ít nhất 6 ký tự');
+                return;
+            }
+
+            if (password !== confirmPassword) {
+                this.toast.warning('Mật khẩu xác nhận không khớp');
+                return;
+            }
+
+            if (!terms) {
+                this.toast.warning('Vui lòng đồng ý với Điều khoản sử dụng');
+                return;
+            }
+
+            try {
+                await this.api.register({ username, email, password });
+                this.toast.success('Đăng ký thành công! Vui lòng đăng nhập.');
+                this.modal.close();
+                setTimeout(() => this.showLoginForm(), 1000);
+            } catch (error) {
+                this.toast.error(error.message || 'Đăng ký thất bại');
             }
         });
     }
@@ -579,22 +729,18 @@ class JobQueueApp {
         
         state.currentTab = tabId;
 
-        // Update tab buttons
         document.querySelectorAll('.tab-btn').forEach(btn => {
             const isActive = btn.dataset.tab === tabId;
             btn.classList.toggle('active', isActive);
             btn.setAttribute('aria-selected', isActive);
         });
 
-        // Update tab content
         document.querySelectorAll('.tab-content').forEach(content => {
             content.classList.toggle('active', content.id === `tab-${tabId}`);
         });
 
-        // Load data for the tab
         this.loadTabData(tabId);
 
-        // Setup chat refresh if needed
         if (tabId === 'chat') {
             this.setupChatRefresh();
         } else if (this.chatTimer) {
@@ -770,7 +916,7 @@ class JobQueueApp {
                 </div>
                 <div class="card-stats">
                     <span class="stat-item"><i class="fas fa-tasks"></i> ${api.jobCount || 0} jobs</span>
-                    <span class="stat-item"><i class="fas fa-calendar"></i> ${Utils.formatDate(api.createdAt || Date.now())}</span>
+                    <span class="stat-item"><i class="fas fa-calendar"></i> ${Utils.formatDate(api.createdAt)}</span>
                 </div>
                 <div class="card-actions">
                     <button onclick="app.toggleApi(${api.id})" class="btn btn-sm ${api.enabled ? 'btn-warning' : 'btn-success'}">
@@ -979,7 +1125,7 @@ class JobQueueApp {
                     <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:8px;">${Utils.escapeHTML(bot.description || 'Không có mô tả')}</p>
                     <div class="card-stats">
                         <span class="stat-item"><i class="fab fa-discord"></i> ${bot.botToken ? 'Đã kết nối' : 'Chưa kết nối'}</span>
-                        <span class="stat-item"><i class="fas fa-calendar"></i> ${Utils.formatDate(bot.createdAt || Date.now())}</span>
+                        <span class="stat-item"><i class="fas fa-calendar"></i> ${Utils.formatDate(bot.createdAt)}</span>
                     </div>
                     <div class="card-actions">
                         ${isRunning 
@@ -1179,7 +1325,7 @@ class JobQueueApp {
                     </div>
                     <div class="card-stats">
                         <span class="stat-item"><i class="fas fa-clock"></i> ${monitor.interval || 60}s</span>
-                        <span class="stat-item"><i class="fas fa-calendar"></i> ${Utils.formatDate(monitor.createdAt || Date.now())}</span>
+                        <span class="stat-item"><i class="fas fa-calendar"></i> ${Utils.formatDate(monitor.createdAt)}</span>
                     </div>
                     <div class="card-actions">
                         <button onclick="app.editMonitor(${monitor.id})" class="btn btn-sm btn-primary"><i class="fas fa-edit"></i></button>
@@ -1332,15 +1478,13 @@ class JobQueueApp {
             return;
         }
 
-        const isOwn = (msg) => msg.userId === state.user?.id;
-        
         const html = messages.map(msg => {
-            const own = isOwn(msg);
+            const isOwn = msg.userId === state.user?.id;
             return `
-                <div class="chat-message ${own ? 'self' : 'other'}">
+                <div class="chat-message ${isOwn ? 'self' : 'other'}">
                     <div class="msg-user">${Utils.escapeHTML(msg.username || 'Anonymous')}</div>
                     <div class="msg-content">${Utils.escapeHTML(msg.content)}</div>
-                    <div class="msg-time">${Utils.formatDate(msg.createdAt || Date.now())}</div>
+                    <div class="msg-time">${Utils.formatDate(msg.createdAt)}</div>
                 </div>
             `;
         }).join('');
