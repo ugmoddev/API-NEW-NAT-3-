@@ -114,6 +114,7 @@ const Utils = {
     },
 
     escapeHTML(str) {
+        if (!str) return '';
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
@@ -131,12 +132,33 @@ const Utils = {
         if (!name) return '?';
         return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
     },
+
+    getStatusClass(status) {
+        const statusMap = {
+            'online': 'status-online',
+            'running': 'status-running',
+            'offline': 'status-offline',
+            'stopped': 'status-stopped',
+        };
+        return statusMap[status] || 'status-offline';
+    },
+
+    getStatusText(status) {
+        const textMap = {
+            'online': 'Online',
+            'running': 'Đang chạy',
+            'offline': 'Offline',
+            'stopped': 'Đã dừng',
+        };
+        return textMap[status] || status;
+    }
 };
 
 // ===== API CLIENT =====
 class ApiClient {
     constructor() {
         this.baseUrl = CONFIG.API_BASE;
+        this.retryCount = 0;
     }
 
     async request(endpoint, options = {}) {
@@ -161,14 +183,21 @@ class ApiClient {
                 throw new Error(data.message || `HTTP ${response.status}`);
             }
             
+            this.retryCount = 0;
             return data;
         } catch (error) {
             console.error(`API Error [${endpoint}]:`, error);
+            if (this.retryCount < CONFIG.MAX_RETRIES) {
+                this.retryCount++;
+                await Utils.sleep(CONFIG.RETRY_DELAY * this.retryCount);
+                return this.request(endpoint, options);
+            }
+            this.retryCount = 0;
             throw error;
         }
     }
 
-    // Auth
+    // Auth endpoints
     async login(credentials) {
         return this.request('/api/auth/login', {
             method: 'POST',
@@ -186,7 +215,7 @@ class ApiClient {
         return this.request('/api/auth/me');
     }
 
-    // APIs
+    // API endpoints
     async getApis() {
         return this.request('/api/apis');
     }
@@ -211,7 +240,7 @@ class ApiClient {
         });
     }
 
-    // Bots
+    // Bot endpoints
     async getBots() {
         return this.request('/api/bots');
     }
@@ -248,7 +277,7 @@ class ApiClient {
         });
     }
 
-    // Monitors
+    // Monitor endpoints
     async getMonitors() {
         return this.request('/api/monitors');
     }
@@ -273,7 +302,7 @@ class ApiClient {
         });
     }
 
-    // Chat
+    // Chat endpoints
     async getChatMessages() {
         return this.request('/api/chat/messages');
     }
@@ -324,28 +353,21 @@ class Toast {
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
         toast.innerHTML = `
-            <div class="toast-icon">
-                <i class="fas ${this.getIcon(type)}"></i>
-            </div>
-            <div class="toast-content">${message}</div>
-            <button class="toast-close">&times;</button>
+            <i class="fas ${this.getIcon(type)}"></i>
+            <span>${message}</span>
         `;
-
-        const close = toast.querySelector('.toast-close');
-        close.addEventListener('click', () => this.remove(toast));
 
         this.container.appendChild(toast);
 
         setTimeout(() => {
-            this.remove(toast);
+            if (toast.parentNode) {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                setTimeout(() => {
+                    if (toast.parentNode) toast.remove();
+                }, 300);
+            }
         }, duration);
-    }
-
-    remove(toast) {
-        toast.classList.add('toast-hide');
-        setTimeout(() => {
-            if (toast.parentNode) toast.remove();
-        }, 300);
     }
 
     getIcon(type) {
@@ -399,6 +421,8 @@ class ModalManager {
         this.modal.style.display = 'flex';
         this.isOpen = true;
         document.body.style.overflow = 'hidden';
+        // Focus trap
+        this.modal.focus();
     }
 
     close() {
@@ -423,7 +447,6 @@ class JobQueueApp {
         this.loadUser();
         this.loadData();
         this.setupAutoRefresh();
-        this.setupChatRefresh();
     }
 
     // ===== EVENT LISTENERS =====
@@ -433,7 +456,10 @@ class JobQueueApp {
 
         // Tabs
         document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => this.switchTab(e.currentTarget.dataset.tab));
+            btn.addEventListener('click', (e) => {
+                const tab = e.currentTarget.dataset.tab;
+                this.switchTab(tab);
+            });
         });
 
         // Create buttons
@@ -448,17 +474,17 @@ class JobQueueApp {
         // Chat
         DOM.chatSendBtn.addEventListener('click', () => this.sendChatMessage());
         DOM.chatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') this.sendChatMessage();
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendChatMessage();
+            }
         });
-
-        // Modal close
-        DOM.modalClose.addEventListener('click', () => this.modal.close());
     }
 
     // ===== AUTH =====
     async handleAuth() {
         if (state.user) {
-            this.logout();
+            await this.logout();
         } else {
             this.showLoginForm();
         }
@@ -469,25 +495,33 @@ class JobQueueApp {
             <form id="loginForm" class="modal-form">
                 <div class="form-group">
                     <label for="loginUsername">Tên đăng nhập</label>
-                    <input type="text" id="loginUsername" placeholder="Username" required>
+                    <input type="text" id="loginUsername" placeholder="Username" required autofocus>
                 </div>
                 <div class="form-group">
                     <label for="loginPassword">Mật khẩu</label>
                     <input type="password" id="loginPassword" placeholder="Password" required>
                 </div>
-                <button type="submit" class="btn btn-primary btn-block">Đăng nhập</button>
+                <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">
+                    <i class="fas fa-sign-in-alt"></i> Đăng nhập
+                </button>
             </form>
         `;
 
         this.modal.open('Đăng nhập', html);
 
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        const form = document.getElementById('loginForm');
+        form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const username = document.getElementById('loginUsername').value;
+            const username = document.getElementById('loginUsername').value.trim();
             const password = document.getElementById('loginPassword').value;
 
+            if (!username || !password) {
+                this.toast.warning('Vui lòng nhập đầy đủ thông tin');
+                return;
+            }
+
             try {
-                const result = await this.api.login({ username, password });
+                await this.api.login({ username, password });
                 this.toast.success('Đăng nhập thành công!');
                 this.modal.close();
                 await this.loadUser();
@@ -499,6 +533,8 @@ class JobQueueApp {
     }
 
     async logout() {
+        if (!confirm('Bạn có chắc muốn đăng xuất?')) return;
+
         try {
             await this.api.logout();
             this.toast.success('Đã đăng xuất');
@@ -527,16 +563,20 @@ class JobQueueApp {
             DOM.userRole.textContent = state.user.role || 'user';
             DOM.authBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i><span>Đăng xuất</span>';
             DOM.userAvatar.src = state.user.avatar || '/assets/images/default-avatar.png';
+            DOM.userAvatar.alt = `Avatar của ${state.user.username}`;
         } else {
             DOM.userName.textContent = 'Guest';
             DOM.userRole.textContent = 'visitor';
             DOM.authBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i><span>Đăng nhập</span>';
             DOM.userAvatar.src = '/assets/images/default-avatar.png';
+            DOM.userAvatar.alt = 'Default avatar';
         }
     }
 
     // ===== TAB MANAGEMENT =====
     switchTab(tabId) {
+        if (state.currentTab === tabId) return;
+        
         state.currentTab = tabId;
 
         // Update tab buttons
@@ -551,8 +591,16 @@ class JobQueueApp {
             content.classList.toggle('active', content.id === `tab-${tabId}`);
         });
 
-        // Refresh data for the tab
+        // Load data for the tab
         this.loadTabData(tabId);
+
+        // Setup chat refresh if needed
+        if (tabId === 'chat') {
+            this.setupChatRefresh();
+        } else if (this.chatTimer) {
+            clearInterval(this.chatTimer);
+            this.chatTimer = null;
+        }
     }
 
     async loadTabData(tabId) {
@@ -580,8 +628,11 @@ class JobQueueApp {
                 this.loadApis(),
                 this.loadBots(),
                 this.loadMonitors(),
-                this.loadChat(),
             ]);
+            
+            if (state.currentTab === 'chat') {
+                await this.loadChat();
+            }
         } catch (error) {
             console.error('Load data error:', error);
             this.toast.error('Lỗi tải dữ liệu');
@@ -630,9 +681,9 @@ class JobQueueApp {
         }
 
         const roleColors = {
-            admin: '#ff6b6b',
-            user: '#4ecdc4',
-            moderator: '#ffd93d',
+            admin: '#ef4444',
+            user: '#10b981',
+            moderator: '#f59e0b',
             visitor: '#6c5ce7',
         };
 
@@ -640,8 +691,8 @@ class JobQueueApp {
             .map(([role, count]) => `
                 <div class="detail-row">
                     <span class="detail-row-label">
-                        <span class="role-dot" style="background: ${roleColors[role] || '#888'}"></span>
-                        ${role}
+                        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${roleColors[role] || '#888'};margin-right:8px;"></span>
+                        ${Utils.escapeHTML(role)}
                     </span>
                     <span class="detail-row-value">${count}</span>
                 </div>
@@ -657,10 +708,13 @@ class JobQueueApp {
         }
 
         const html = topApis
+            .slice(0, 5)
             .map((api, index) => `
                 <div class="detail-row">
                     <span class="detail-row-label">
-                        <span class="rank-badge rank-${index + 1}">#${index + 1}</span>
+                        <span style="display:inline-block;width:20px;text-align:center;font-weight:bold;color:${index === 0 ? '#f59e0b' : index === 1 ? '#94a3b8' : index === 2 ? '#cd7f32' : '#666'};margin-right:8px;">
+                            #${index + 1}
+                        </span>
                         ${Utils.escapeHTML(api.name)}
                     </span>
                     <span class="detail-row-value">${api.jobCount} jobs</span>
@@ -679,7 +733,7 @@ class JobQueueApp {
             this.renderApis(apis);
         } catch (error) {
             console.error('Load APIs error:', error);
-            DOM.apiList.innerHTML = '<div class="empty-state">Không thể tải danh sách API</div>';
+            DOM.apiList.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Không thể tải danh sách API</p></div>';
         }
     }
 
@@ -699,35 +753,35 @@ class JobQueueApp {
 
         const html = apis.map(api => `
             <div class="api-card ${api.enabled ? 'enabled' : 'disabled'}">
-                <div class="api-card-header">
-                    <div class="api-card-title">
-                        <h4>${Utils.escapeHTML(api.name)}</h4>
-                        <span class="api-status ${api.enabled ? 'status-on' : 'status-off'}">
-                            ${api.enabled ? 'Bật' : 'Tắt'}
-                        </span>
-                        ${api.private ? '<span class="api-badge private">Riêng tư</span>' : ''}
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fas fa-${api.enabled ? 'check-circle' : 'times-circle'}" style="color:${api.enabled ? 'var(--success)' : 'var(--danger)'}"></i>
+                        ${Utils.escapeHTML(api.name)}
                     </div>
-                    <div class="api-card-actions">
-                        <button onclick="app.toggleApi(${api.id})" class="btn btn-sm ${api.enabled ? 'btn-warning' : 'btn-success'}">
-                            <i class="fas ${api.enabled ? 'fa-pause' : 'fa-play'}"></i>
-                        </button>
-                        <button onclick="app.editApi(${api.id})" class="btn btn-sm btn-primary">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button onclick="app.deleteApi(${api.id})" class="btn btn-sm btn-danger">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
+                    <span class="status-badge ${api.enabled ? 'status-running' : 'status-stopped'}">
+                        ${api.enabled ? 'Đang chạy' : 'Đã dừng'}
+                    </span>
                 </div>
-                <div class="api-card-body">
-                    <div class="api-endpoint">
-                        <code>${Utils.escapeHTML(api.endpoint || `/api/${api.name}`)}</code>
-                    </div>
-                    ${api.description ? `<p class="api-description">${Utils.escapeHTML(api.description)}</p>` : ''}
-                    <div class="api-meta">
-                        <span><i class="fas fa-tasks"></i> ${api.jobCount || 0} jobs</span>
-                        <span><i class="fas fa-calendar"></i> ${Utils.formatDate(api.createdAt || Date.now())}</span>
-                    </div>
+                ${api.owner ? `<div class="card-owner"><i class="fas fa-user"></i> ${Utils.escapeHTML(api.owner)}</div>` : ''}
+                ${api.description ? `<p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:8px;">${Utils.escapeHTML(api.description)}</p>` : ''}
+                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">
+                    <code style="background:var(--bg-secondary);padding:2px 8px;border-radius:4px;">${Utils.escapeHTML(api.endpoint || `/api/${api.name}`)}</code>
+                    ${api.private ? ' <span class="status-badge status-stopped">Riêng tư</span>' : ''}
+                </div>
+                <div class="card-stats">
+                    <span class="stat-item"><i class="fas fa-tasks"></i> ${api.jobCount || 0} jobs</span>
+                    <span class="stat-item"><i class="fas fa-calendar"></i> ${Utils.formatDate(api.createdAt || Date.now())}</span>
+                </div>
+                <div class="card-actions">
+                    <button onclick="app.toggleApi(${api.id})" class="btn btn-sm ${api.enabled ? 'btn-warning' : 'btn-success'}">
+                        <i class="fas ${api.enabled ? 'fa-pause' : 'fa-play'}"></i>
+                    </button>
+                    <button onclick="app.editApi(${api.id})" class="btn btn-sm btn-primary">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button onclick="app.deleteApi(${api.id})" class="btn btn-sm btn-danger">
+                        <i class="fas fa-trash"></i>
+                    </button>
                 </div>
             </div>
         `).join('');
@@ -740,7 +794,7 @@ class JobQueueApp {
             <form id="apiForm" class="modal-form">
                 <div class="form-group">
                     <label for="apiName">Tên API</label>
-                    <input type="text" id="apiName" placeholder="Nhập tên API" required>
+                    <input type="text" id="apiName" placeholder="Nhập tên API" required autofocus>
                 </div>
                 <div class="form-group">
                     <label for="apiDescription">Mô tả</label>
@@ -750,19 +804,17 @@ class JobQueueApp {
                     <label for="apiEndpoint">Endpoint</label>
                     <input type="text" id="apiEndpoint" placeholder="/api/your-endpoint">
                 </div>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="apiEnabled" checked>
-                        Bật API
-                    </label>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="apiEnabled" checked>
+                    <label for="apiEnabled">Bật API</label>
                 </div>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="apiPrivate">
-                        API riêng tư
-                    </label>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="apiPrivate">
+                    <label for="apiPrivate">API riêng tư</label>
                 </div>
-                <button type="submit" class="btn btn-success btn-block">Tạo API</button>
+                <button type="submit" class="btn btn-success" style="width:100%;justify-content:center;">
+                    <i class="fas fa-plus"></i> Tạo API
+                </button>
             </form>
         `;
 
@@ -771,12 +823,17 @@ class JobQueueApp {
         document.getElementById('apiForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
-                name: document.getElementById('apiName').value,
-                description: document.getElementById('apiDescription').value,
-                endpoint: document.getElementById('apiEndpoint').value || undefined,
+                name: document.getElementById('apiName').value.trim(),
+                description: document.getElementById('apiDescription').value.trim(),
+                endpoint: document.getElementById('apiEndpoint').value.trim() || undefined,
                 enabled: document.getElementById('apiEnabled').checked,
                 private: document.getElementById('apiPrivate').checked,
             };
+
+            if (!data.name) {
+                this.toast.warning('Vui lòng nhập tên API');
+                return;
+            }
 
             try {
                 await this.api.createApi(data);
@@ -812,7 +869,7 @@ class JobQueueApp {
             <form id="editApiForm" class="modal-form">
                 <div class="form-group">
                     <label for="editApiName">Tên API</label>
-                    <input type="text" id="editApiName" value="${Utils.escapeHTML(api.name)}" required>
+                    <input type="text" id="editApiName" value="${Utils.escapeHTML(api.name)}" required autofocus>
                 </div>
                 <div class="form-group">
                     <label for="editApiDescription">Mô tả</label>
@@ -822,19 +879,17 @@ class JobQueueApp {
                     <label for="editApiEndpoint">Endpoint</label>
                     <input type="text" id="editApiEndpoint" value="${Utils.escapeHTML(api.endpoint || '')}">
                 </div>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="editApiEnabled" ${api.enabled ? 'checked' : ''}>
-                        Bật API
-                    </label>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="editApiEnabled" ${api.enabled ? 'checked' : ''}>
+                    <label for="editApiEnabled">Bật API</label>
                 </div>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="editApiPrivate" ${api.private ? 'checked' : ''}>
-                        API riêng tư
-                    </label>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="editApiPrivate" ${api.private ? 'checked' : ''}>
+                    <label for="editApiPrivate">API riêng tư</label>
                 </div>
-                <button type="submit" class="btn btn-primary btn-block">Cập nhật</button>
+                <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">
+                    <i class="fas fa-save"></i> Cập nhật
+                </button>
             </form>
         `;
 
@@ -843,12 +898,17 @@ class JobQueueApp {
         document.getElementById('editApiForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
-                name: document.getElementById('editApiName').value,
-                description: document.getElementById('editApiDescription').value,
-                endpoint: document.getElementById('editApiEndpoint').value || undefined,
+                name: document.getElementById('editApiName').value.trim(),
+                description: document.getElementById('editApiDescription').value.trim(),
+                endpoint: document.getElementById('editApiEndpoint').value.trim() || undefined,
                 enabled: document.getElementById('editApiEnabled').checked,
                 private: document.getElementById('editApiPrivate').checked,
             };
+
+            if (!data.name) {
+                this.toast.warning('Vui lòng nhập tên API');
+                return;
+            }
 
             try {
                 await this.api.updateApi(id, data);
@@ -884,7 +944,7 @@ class JobQueueApp {
             this.renderBots(bots);
         } catch (error) {
             console.error('Load bots error:', error);
-            DOM.botList.innerHTML = '<div class="empty-state">Không thể tải danh sách bot</div>';
+            DOM.botList.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Không thể tải danh sách bot</p></div>';
         }
     }
 
@@ -902,41 +962,36 @@ class JobQueueApp {
             return;
         }
 
-        const html = bots.map(bot => `
-            <div class="bot-card ${bot.status === 'running' ? 'running' : 'stopped'}">
-                <div class="bot-card-header">
-                    <div class="bot-card-title">
-                        <h4>${Utils.escapeHTML(bot.name)}</h4>
-                        <span class="bot-status ${bot.status === 'running' ? 'status-on' : 'status-off'}">
-                            ${bot.status === 'running' ? 'Đang chạy' : 'Đã dừng'}
+        const html = bots.map(bot => {
+            const isRunning = bot.status === 'running';
+            return `
+                <div class="bot-card">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i class="fas fa-robot" style="color:${isRunning ? 'var(--success)' : 'var(--danger)'}"></i>
+                            ${Utils.escapeHTML(bot.name)}
+                        </div>
+                        <span class="status-badge ${isRunning ? 'status-running' : 'status-stopped'}">
+                            ${isRunning ? 'Đang chạy' : 'Đã dừng'}
                         </span>
                     </div>
-                    <div class="bot-card-actions">
-                        ${bot.status === 'running' 
-                            ? `<button onclick="app.stopBot(${bot.id})" class="btn btn-sm btn-danger">
-                                <i class="fas fa-stop"></i>
-                               </button>`
-                            : `<button onclick="app.startBot(${bot.id})" class="btn btn-sm btn-success">
-                                <i class="fas fa-play"></i>
-                               </button>`
+                    ${bot.owner ? `<div class="card-owner"><i class="fas fa-user"></i> ${Utils.escapeHTML(bot.owner)}</div>` : ''}
+                    <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:8px;">${Utils.escapeHTML(bot.description || 'Không có mô tả')}</p>
+                    <div class="card-stats">
+                        <span class="stat-item"><i class="fab fa-discord"></i> ${bot.botToken ? 'Đã kết nối' : 'Chưa kết nối'}</span>
+                        <span class="stat-item"><i class="fas fa-calendar"></i> ${Utils.formatDate(bot.createdAt || Date.now())}</span>
+                    </div>
+                    <div class="card-actions">
+                        ${isRunning 
+                            ? `<button onclick="app.stopBot(${bot.id})" class="btn btn-sm btn-danger"><i class="fas fa-stop"></i></button>`
+                            : `<button onclick="app.startBot(${bot.id})" class="btn btn-sm btn-success"><i class="fas fa-play"></i></button>`
                         }
-                        <button onclick="app.editBot(${bot.id})" class="btn btn-sm btn-primary">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button onclick="app.deleteBot(${bot.id})" class="btn btn-sm btn-danger">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                        <button onclick="app.editBot(${bot.id})" class="btn btn-sm btn-primary"><i class="fas fa-edit"></i></button>
+                        <button onclick="app.deleteBot(${bot.id})" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>
-                <div class="bot-card-body">
-                    <p class="bot-description">${Utils.escapeHTML(bot.description || 'Không có mô tả')}</p>
-                    <div class="bot-meta">
-                        <span><i class="fab fa-discord"></i> ${Utils.escapeHTML(bot.botToken ? 'Đã kết nối' : 'Chưa kết nối')}</span>
-                        <span><i class="fas fa-calendar"></i> ${Utils.formatDate(bot.createdAt || Date.now())}</span>
-                    </div>
-                </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
 
         DOM.botList.innerHTML = html;
     }
@@ -946,7 +1001,7 @@ class JobQueueApp {
             <form id="botForm" class="modal-form">
                 <div class="form-group">
                     <label for="botName">Tên Bot</label>
-                    <input type="text" id="botName" placeholder="Nhập tên bot" required>
+                    <input type="text" id="botName" placeholder="Nhập tên bot" required autofocus>
                 </div>
                 <div class="form-group">
                     <label for="botDescription">Mô tả</label>
@@ -955,8 +1010,11 @@ class JobQueueApp {
                 <div class="form-group">
                     <label for="botToken">Discord Bot Token</label>
                     <input type="password" id="botToken" placeholder="Nhập token Discord bot">
+                    <small>Bắt buộc nếu bạn muốn bot hoạt động</small>
                 </div>
-                <button type="submit" class="btn btn-success btn-block">Tạo Bot</button>
+                <button type="submit" class="btn btn-success" style="width:100%;justify-content:center;">
+                    <i class="fas fa-plus"></i> Tạo Bot
+                </button>
             </form>
         `;
 
@@ -965,10 +1023,15 @@ class JobQueueApp {
         document.getElementById('botForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
-                name: document.getElementById('botName').value,
-                description: document.getElementById('botDescription').value,
-                botToken: document.getElementById('botToken').value || undefined,
+                name: document.getElementById('botName').value.trim(),
+                description: document.getElementById('botDescription').value.trim(),
+                botToken: document.getElementById('botToken').value.trim() || undefined,
             };
+
+            if (!data.name) {
+                this.toast.warning('Vui lòng nhập tên bot');
+                return;
+            }
 
             try {
                 await this.api.createBot(data);
@@ -1012,7 +1075,7 @@ class JobQueueApp {
             <form id="editBotForm" class="modal-form">
                 <div class="form-group">
                     <label for="editBotName">Tên Bot</label>
-                    <input type="text" id="editBotName" value="${Utils.escapeHTML(bot.name)}" required>
+                    <input type="text" id="editBotName" value="${Utils.escapeHTML(bot.name)}" required autofocus>
                 </div>
                 <div class="form-group">
                     <label for="editBotDescription">Mô tả</label>
@@ -1023,7 +1086,9 @@ class JobQueueApp {
                     <input type="password" id="editBotToken" placeholder="Nhập token Discord bot">
                     <small>Để trống nếu không muốn thay đổi</small>
                 </div>
-                <button type="submit" class="btn btn-primary btn-block">Cập nhật</button>
+                <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">
+                    <i class="fas fa-save"></i> Cập nhật
+                </button>
             </form>
         `;
 
@@ -1032,10 +1097,15 @@ class JobQueueApp {
         document.getElementById('editBotForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
-                name: document.getElementById('editBotName').value,
-                description: document.getElementById('editBotDescription').value,
-                botToken: document.getElementById('editBotToken').value || undefined,
+                name: document.getElementById('editBotName').value.trim(),
+                description: document.getElementById('editBotDescription').value.trim(),
+                botToken: document.getElementById('editBotToken').value.trim() || undefined,
             };
+
+            if (!data.name) {
+                this.toast.warning('Vui lòng nhập tên bot');
+                return;
+            }
 
             try {
                 await this.api.updateBot(id, data);
@@ -1070,7 +1140,7 @@ class JobQueueApp {
             this.renderMonitors(monitors);
         } catch (error) {
             console.error('Load monitors error:', error);
-            DOM.monitorList.innerHTML = '<div class="empty-state">Không thể tải danh sách monitor</div>';
+            DOM.monitorList.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Không thể tải danh sách monitor</p></div>';
         }
     }
 
@@ -1088,37 +1158,36 @@ class JobQueueApp {
             return;
         }
 
-        const html = monitors.map(monitor => `
-            <div class="monitor-card ${monitor.status === 'online' ? 'online' : 'offline'}">
-                <div class="monitor-card-header">
-                    <div class="monitor-card-title">
-                        <h4>${Utils.escapeHTML(monitor.name)}</h4>
-                        <span class="monitor-status ${monitor.status === 'online' ? 'status-on' : 'status-off'}">
-                            ${monitor.status === 'online' ? 'Online' : 'Offline'}
+        const html = monitors.map(monitor => {
+            const isOnline = monitor.status === 'online';
+            return `
+                <div class="monitor-card">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i class="fas fa-heartbeat" style="color:${isOnline ? 'var(--success)' : 'var(--danger)'}"></i>
+                            ${Utils.escapeHTML(monitor.name)}
+                        </div>
+                        <span class="status-badge ${isOnline ? 'status-online' : 'status-offline'}">
+                            ${isOnline ? 'Online' : 'Offline'}
                         </span>
                     </div>
-                    <div class="monitor-card-actions">
-                        <button onclick="app.editMonitor(${monitor.id})" class="btn btn-sm btn-primary">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button onclick="app.deleteMonitor(${monitor.id})" class="btn btn-sm btn-danger">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="monitor-card-body">
-                    <div class="monitor-url">
-                        <a href="${Utils.escapeHTML(monitor.url)}" target="_blank" rel="noopener">
+                    ${monitor.owner ? `<div class="card-owner"><i class="fas fa-user"></i> ${Utils.escapeHTML(monitor.owner)}</div>` : ''}
+                    <div style="font-size:0.9rem;margin-bottom:8px;">
+                        <a href="${Utils.escapeHTML(monitor.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);text-decoration:none;">
                             ${Utils.escapeHTML(monitor.url)}
                         </a>
                     </div>
-                    <div class="monitor-meta">
-                        <span><i class="fas fa-clock"></i> ${monitor.interval || 60}s</span>
-                        <span><i class="fas fa-calendar"></i> ${Utils.formatDate(monitor.createdAt || Date.now())}</span>
+                    <div class="card-stats">
+                        <span class="stat-item"><i class="fas fa-clock"></i> ${monitor.interval || 60}s</span>
+                        <span class="stat-item"><i class="fas fa-calendar"></i> ${Utils.formatDate(monitor.createdAt || Date.now())}</span>
+                    </div>
+                    <div class="card-actions">
+                        <button onclick="app.editMonitor(${monitor.id})" class="btn btn-sm btn-primary"><i class="fas fa-edit"></i></button>
+                        <button onclick="app.deleteMonitor(${monitor.id})" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
 
         DOM.monitorList.innerHTML = html;
     }
@@ -1128,7 +1197,7 @@ class JobQueueApp {
             <form id="monitorForm" class="modal-form">
                 <div class="form-group">
                     <label for="monitorName">Tên Monitor</label>
-                    <input type="text" id="monitorName" placeholder="Nhập tên monitor" required>
+                    <input type="text" id="monitorName" placeholder="Nhập tên monitor" required autofocus>
                 </div>
                 <div class="form-group">
                     <label for="monitorUrl">URL</label>
@@ -1138,7 +1207,9 @@ class JobQueueApp {
                     <label for="monitorInterval">Thời gian kiểm tra (giây)</label>
                     <input type="number" id="monitorInterval" value="60" min="10" max="3600">
                 </div>
-                <button type="submit" class="btn btn-success btn-block">Tạo Monitor</button>
+                <button type="submit" class="btn btn-success" style="width:100%;justify-content:center;">
+                    <i class="fas fa-plus"></i> Tạo Monitor
+                </button>
             </form>
         `;
 
@@ -1147,10 +1218,15 @@ class JobQueueApp {
         document.getElementById('monitorForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
-                name: document.getElementById('monitorName').value,
-                url: document.getElementById('monitorUrl').value,
+                name: document.getElementById('monitorName').value.trim(),
+                url: document.getElementById('monitorUrl').value.trim(),
                 interval: parseInt(document.getElementById('monitorInterval').value) || 60,
             };
+
+            if (!data.name || !data.url) {
+                this.toast.warning('Vui lòng nhập đầy đủ thông tin');
+                return;
+            }
 
             try {
                 await this.api.createMonitor(data);
@@ -1172,7 +1248,7 @@ class JobQueueApp {
             <form id="editMonitorForm" class="modal-form">
                 <div class="form-group">
                     <label for="editMonitorName">Tên Monitor</label>
-                    <input type="text" id="editMonitorName" value="${Utils.escapeHTML(monitor.name)}" required>
+                    <input type="text" id="editMonitorName" value="${Utils.escapeHTML(monitor.name)}" required autofocus>
                 </div>
                 <div class="form-group">
                     <label for="editMonitorUrl">URL</label>
@@ -1182,7 +1258,9 @@ class JobQueueApp {
                     <label for="editMonitorInterval">Thời gian kiểm tra (giây)</label>
                     <input type="number" id="editMonitorInterval" value="${monitor.interval || 60}" min="10" max="3600">
                 </div>
-                <button type="submit" class="btn btn-primary btn-block">Cập nhật</button>
+                <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">
+                    <i class="fas fa-save"></i> Cập nhật
+                </button>
             </form>
         `;
 
@@ -1191,10 +1269,15 @@ class JobQueueApp {
         document.getElementById('editMonitorForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const data = {
-                name: document.getElementById('editMonitorName').value,
-                url: document.getElementById('editMonitorUrl').value,
+                name: document.getElementById('editMonitorName').value.trim(),
+                url: document.getElementById('editMonitorUrl').value.trim(),
                 interval: parseInt(document.getElementById('editMonitorInterval').value) || 60,
             };
+
+            if (!data.name || !data.url) {
+                this.toast.warning('Vui lòng nhập đầy đủ thông tin');
+                return;
+            }
 
             try {
                 await this.api.updateMonitor(id, data);
@@ -1241,28 +1324,26 @@ class JobQueueApp {
     renderChatMessages(messages) {
         if (!messages || messages.length === 0) {
             DOM.chatMessages.innerHTML = `
-                <div class="chat-empty">
-                    <i class="fas fa-comment-dots fa-3x"></i>
+                <div style="text-align:center;padding:40px 20px;color:var(--text-muted);">
+                    <i class="fas fa-comment-dots fa-3x" style="margin-bottom:12px;opacity:0.5;"></i>
                     <p>Chưa có tin nhắn nào</p>
                 </div>
             `;
             return;
         }
 
-        const html = messages.map(msg => `
-            <div class="chat-message ${msg.userId === state.user?.id ? 'own' : ''}">
-                <div class="chat-message-avatar">
-                    <img src="${msg.avatar || '/assets/images/default-avatar.png'}" alt="${Utils.escapeHTML(msg.username)}">
+        const isOwn = (msg) => msg.userId === state.user?.id;
+        
+        const html = messages.map(msg => {
+            const own = isOwn(msg);
+            return `
+                <div class="chat-message ${own ? 'self' : 'other'}">
+                    <div class="msg-user">${Utils.escapeHTML(msg.username || 'Anonymous')}</div>
+                    <div class="msg-content">${Utils.escapeHTML(msg.content)}</div>
+                    <div class="msg-time">${Utils.formatDate(msg.createdAt || Date.now())}</div>
                 </div>
-                <div class="chat-message-content">
-                    <div class="chat-message-header">
-                        <span class="chat-message-username">${Utils.escapeHTML(msg.username || 'Anonymous')}</span>
-                        <span class="chat-message-time">${Utils.formatDate(msg.createdAt || Date.now())}</span>
-                    </div>
-                    <div class="chat-message-text">${Utils.escapeHTML(msg.content)}</div>
-                </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
 
         DOM.chatMessages.innerHTML = html;
         DOM.chatMessages.scrollTop = DOM.chatMessages.scrollHeight;
@@ -1270,7 +1351,12 @@ class JobQueueApp {
 
     async sendChatMessage() {
         const content = DOM.chatInput.value.trim();
-        if (!content) return;
+        if (!content) {
+            this.toast.warning('Vui lòng nhập tin nhắn');
+            return;
+        }
+
+        DOM.chatSendBtn.disabled = true;
 
         try {
             await this.api.sendChatMessage(content);
@@ -1278,6 +1364,8 @@ class JobQueueApp {
             await this.loadChat();
         } catch (error) {
             this.toast.error('Gửi tin nhắn thất bại');
+        } finally {
+            DOM.chatSendBtn.disabled = false;
         }
     }
 
@@ -1293,8 +1381,8 @@ class JobQueueApp {
 
     async handleBackup() {
         try {
-            await this.api.backup();
-            this.toast.success('Backup thành công!');
+            const result = await this.api.backup();
+            this.toast.success(result.message || 'Backup thành công!');
         } catch (error) {
             this.toast.error('Backup thất bại');
         }
@@ -1304,16 +1392,22 @@ class JobQueueApp {
     setupAutoRefresh() {
         this.refreshTimer = setInterval(() => {
             this.loadStats();
-            this.loadTabData(state.currentTab);
+            if (state.currentTab !== 'chat') {
+                this.loadTabData(state.currentTab);
+            }
         }, CONFIG.REFRESH_INTERVAL);
     }
 
     setupChatRefresh() {
-        if (state.currentTab === 'chat') {
-            this.chatTimer = setInterval(() => {
-                this.loadChat();
-            }, CONFIG.CHAT_REFRESH_INTERVAL);
+        if (this.chatTimer) {
+            clearInterval(this.chatTimer);
+            this.chatTimer = null;
         }
+        this.chatTimer = setInterval(() => {
+            if (state.currentTab === 'chat') {
+                this.loadChat();
+            }
+        }, CONFIG.CHAT_REFRESH_INTERVAL);
     }
 
     // ===== CLEANUP =====
