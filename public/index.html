@@ -11,28 +11,26 @@
 </head>
 <body>
     <div id="app">
-        <!-- ===== HEADER ===== -->
+        <!-- HEADER -->
         <header class="header">
             <div class="container">
                 <div class="logo">
-                    <img src="/assets/icons/logo.svg" alt="Logo" class="logo-icon">
+                    <img src="/assets/icons/logo.svg" alt="Logo" class="logo-icon" width="32" height="32">
                     <span class="logo-text">Job Queue</span>
                     <span class="logo-badge">v1.0</span>
                 </div>
                 <div class="header-actions">
-                    <!-- Nút Tải DB (luôn hiển thị) -->
-                    <button id="downloadDbBtn" class="btn btn-success" style="margin-right: 8px;">
+                    <button id="downloadDbBtn" class="btn btn-success" aria-label="Tải database">
                         <i class="fas fa-database"></i>
                         <span>Tải DB</span>
                     </button>
-                    <!-- Nút Backup (luôn hiển thị) -->
-                    <button id="backupBtn" class="btn btn-info" style="margin-right: 8px;">
+                    <button id="backupBtn" class="btn btn-info" aria-label="Backup dữ liệu">
                         <i class="fas fa-upload"></i>
                         <span>Backup</span>
                     </button>
                     <div id="userInfo" class="user-info">
                         <div class="user-avatar">
-                            <img id="userAvatar" src="/assets/images/default-avatar.png" alt="Avatar">
+                            <img id="userAvatar" src="/assets/images/default-avatar.png" alt="Avatar" width="40" height="40">
                         </div>
                         <div class="user-details">
                             <span id="userName" class="user-name">Guest</span>
@@ -47,18 +45,18 @@
             </div>
         </header>
 
-        <!-- ===== MAIN CONTENT ===== -->
+        <!-- MAIN CONTENT -->
         <main class="main">
             <div class="container">
                 <!-- Dashboard Stats -->
-                <section class="stats-grid" id="statsGrid">
+                <section class="stats-grid" id="statsGrid" aria-label="Thống kê hệ thống">
                     <div class="stat-card stat-card-api">
                         <div class="stat-icon"><i class="fas fa-code"></i></div>
                         <div class="stat-info">
                             <span class="stat-label">Tổng API</span>
                             <span class="stat-value" id="totalApis">0</span>
                         </div>
-                        <div class="stat-trend" id="trendApis">
+                        <div class="stat-trend">
                             <i class="fas fa-toggle-on"></i>
                             <span><span id="trendEnabledApis">0</span> đang bật</span>
                         </div>
@@ -69,7 +67,7 @@
                             <span class="stat-label">Tổng Jobs</span>
                             <span class="stat-value" id="totalJobs">0</span>
                         </div>
-                        <div class="stat-trend" id="trendJobs">
+                        <div class="stat-trend">
                             <i class="fas fa-chart-line"></i>
                             <span>TB <span id="trendAvgJobs">0</span>/API</span>
                         </div>
@@ -80,7 +78,7 @@
                             <span class="stat-label">Người dùng</span>
                             <span class="stat-value" id="totalUsers">0</span>
                         </div>
-                        <div class="stat-trend" id="trendUsers">
+                        <div class="stat-trend">
                             <i class="fas fa-bolt"></i>
                             <span><span id="trendSessions">0</span> phiên hoạt động</span>
                         </div>
@@ -91,7 +89,7 @@
                             <span class="stat-label">Bot đang chạy</span>
                             <span class="stat-value" id="runningBots">0</span>
                         </div>
-                        <div class="stat-trend down" id="trendBots">
+                        <div class="stat-trend down">
                             <i class="fas fa-power-off"></i>
                             <span><span id="trendStoppedBots">0</span> đã dừng</span>
                         </div>
@@ -99,7 +97,7 @@
                 </section>
 
                 <!-- Detailed Dashboard -->
-                <section class="detail-grid" id="detailGrid">
+                <section class="detail-grid" id="detailGrid" aria-label="Chi tiết hệ thống">
                     <div class="detail-card">
                         <div class="detail-card-header">
                             <h3><i class="fas fa-server"></i> Trạng thái hệ thống</h3>
@@ -149,30 +147,30 @@
                     </div>
                 </section>
 
-                <!-- ===== TABS ===== -->
+                <!-- TABS -->
                 <div class="tabs-wrapper">
-                    <div class="tabs">
-                        <button class="tab-btn active" data-tab="apis">
+                    <div class="tabs" role="tablist">
+                        <button class="tab-btn active" data-tab="apis" role="tab" aria-selected="true">
                             <i class="fas fa-code"></i> APIs
                             <span class="tab-badge" id="apiCount">0</span>
                         </button>
-                        <button class="tab-btn" data-tab="bots">
+                        <button class="tab-btn" data-tab="bots" role="tab" aria-selected="false">
                             <i class="fas fa-robot"></i> Bots
                             <span class="tab-badge" id="botCount">0</span>
                         </button>
-                        <button class="tab-btn" data-tab="monitors">
+                        <button class="tab-btn" data-tab="monitors" role="tab" aria-selected="false">
                             <i class="fas fa-heartbeat"></i> Monitors
                             <span class="tab-badge" id="monitorCount">0</span>
                         </button>
-                        <button class="tab-btn" data-tab="chat">
+                        <button class="tab-btn" data-tab="chat" role="tab" aria-selected="false">
                             <i class="fas fa-comment-dots"></i> Chat
                             <span class="tab-badge" id="chatCount">0</span>
                         </button>
                     </div>
                 </div>
 
-                <!-- ===== TAB: APIs ===== -->
-                <div id="tab-apis" class="tab-content active">
+                <!-- TAB: APIs -->
+                <div id="tab-apis" class="tab-content active" role="tabpanel">
                     <div class="tab-header">
                         <div class="tab-header-left">
                             <h2><i class="fas fa-code"></i> Quản lý API</h2>
@@ -185,8 +183,8 @@
                     <div id="apiList" class="api-grid"></div>
                 </div>
 
-                <!-- ===== TAB: Bots ===== -->
-                <div id="tab-bots" class="tab-content">
+                <!-- TAB: Bots -->
+                <div id="tab-bots" class="tab-content" role="tabpanel">
                     <div class="tab-header">
                         <div class="tab-header-left">
                             <h2><i class="fas fa-robot"></i> Quản lý Bot</h2>
@@ -199,8 +197,8 @@
                     <div id="botList" class="bot-grid"></div>
                 </div>
 
-                <!-- ===== TAB: Monitors ===== -->
-                <div id="tab-monitors" class="tab-content">
+                <!-- TAB: Monitors -->
+                <div id="tab-monitors" class="tab-content" role="tabpanel">
                     <div class="tab-header">
                         <div class="tab-header-left">
                             <h2><i class="fas fa-heartbeat"></i> Quản lý Monitor</h2>
@@ -213,8 +211,8 @@
                     <div id="monitorList" class="monitor-grid"></div>
                 </div>
 
-                <!-- ===== TAB: Chat ===== -->
-                <div id="tab-chat" class="tab-content">
+                <!-- TAB: Chat -->
+                <div id="tab-chat" class="tab-content" role="tabpanel">
                     <div class="chat-container">
                         <div class="chat-header">
                             <div class="chat-header-left">
@@ -237,21 +235,21 @@
             </div>
         </main>
 
-        <!-- ===== MODAL ===== -->
-        <div id="modal" class="modal">
+        <!-- MODAL -->
+        <div id="modal" class="modal" role="dialog" aria-modal="true">
             <div class="modal-content">
                 <div class="modal-header">
                     <h2 id="modalTitle">Modal Title</h2>
-                    <span class="modal-close">&times;</span>
+                    <button class="modal-close" aria-label="Đóng">&times;</button>
                 </div>
                 <div id="modalBody" class="modal-body"></div>
             </div>
         </div>
 
-        <!-- ===== TOAST ===== -->
-        <div id="toastContainer" class="toast-container"></div>
+        <!-- TOAST -->
+        <div id="toastContainer" class="toast-container" aria-live="polite"></div>
     </div>
 
-    <script src="/js/api.js"></script>
+    <script src="/js/api.js" defer></script>
 </body>
 </html>
