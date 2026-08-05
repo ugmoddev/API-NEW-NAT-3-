@@ -1,5 +1,5 @@
 // ==============================
-// JOB QUEUE SYSTEM - COMPLETE
+// JOB QUEUE SYSTEM - COMPLETE FIXED
 // ==============================
 
 // ===== CONFIGURATION =====
@@ -23,6 +23,7 @@ const state = {
     },
     refreshTimer: null,
     chatTimer: null,
+    isInitialized: false,
 };
 
 // ===== DOM CACHE =====
@@ -105,13 +106,17 @@ const Utils = {
 
     formatDate(date) {
         if (!date) return 'N/A';
-        return new Date(date).toLocaleString('vi-VN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-        });
+        try {
+            return new Date(date).toLocaleString('vi-VN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+        } catch {
+            return 'N/A';
+        }
     },
 
     escapeHTML(str) {
@@ -192,6 +197,16 @@ class ApiClient {
             const response = await fetch(url, config);
             const data = await response.json();
             
+            // Nếu là lỗi 401 (Unauthorized) => chưa đăng nhập
+            if (response.status === 401) {
+                state.user = null;
+                if (window.app) {
+                    window.app.updateUserUI();
+                    window.app.clearData();
+                }
+                throw new Error('Vui lòng đăng nhập để tiếp tục');
+            }
+            
             if (!response.ok) {
                 throw new Error(data.message || `HTTP ${response.status}`);
             }
@@ -200,7 +215,7 @@ class ApiClient {
             return data;
         } catch (error) {
             console.error(`API Error [${endpoint}]:`, error);
-            if (this.retryCount < CONFIG.MAX_RETRIES) {
+            if (this.retryCount < CONFIG.MAX_RETRIES && error.message !== 'Vui lòng đăng nhập để tiếp tục') {
                 this.retryCount++;
                 await Utils.sleep(CONFIG.RETRY_DELAY * this.retryCount);
                 return this.request(endpoint, options);
@@ -457,14 +472,33 @@ class JobQueueApp {
         this.api = new ApiClient();
         this.toast = new Toast();
         this.modal = new ModalManager();
+        
+        // Khởi tạo
         this.init();
     }
 
     init() {
         this.setupEventListeners();
-        this.loadUser();
+        this.checkSession();
         this.loadData();
         this.setupAutoRefresh();
+        state.isInitialized = true;
+    }
+
+    // ===== SESSION CHECK =====
+    async checkSession() {
+        try {
+            const user = await this.api.getCurrentUser();
+            if (user && user.id) {
+                state.user = user;
+            } else {
+                state.user = null;
+            }
+        } catch (error) {
+            state.user = null;
+            console.log('Chưa đăng nhập hoặc session hết hạn');
+        }
+        this.updateUserUI();
     }
 
     // ===== EVENT LISTENERS =====
@@ -501,7 +535,7 @@ class JobQueueApp {
 
     // ===== AUTH =====
     async handleAuth() {
-        if (state.user) {
+        if (state.user && state.user.id) {
             await this.logout();
         } else {
             this.showAuthOptions();
@@ -582,10 +616,11 @@ class JobQueueApp {
             }
 
             try {
-                await this.api.login({ username, password });
+                const result = await this.api.login({ username, password });
+                state.user = result.user || result;
                 this.toast.success('Đăng nhập thành công!');
                 this.modal.close();
-                await this.loadUser();
+                this.updateUserUI();
                 await this.loadData();
             } catch (error) {
                 this.toast.error(error.message || 'Đăng nhập thất bại');
@@ -690,36 +725,86 @@ class JobQueueApp {
             this.toast.success('Đã đăng xuất');
             state.user = null;
             this.updateUserUI();
+            this.clearData();
             await this.loadData();
         } catch (error) {
             this.toast.error('Đăng xuất thất bại');
         }
     }
 
-    async loadUser() {
-        try {
-            const user = await this.api.getCurrentUser();
-            state.user = user;
-            this.updateUserUI();
-        } catch (error) {
-            state.user = null;
-            this.updateUserUI();
-        }
+    clearData() {
+        // Reset state data
+        state.data.apis = [];
+        state.data.bots = [];
+        state.data.monitors = [];
+        state.data.chat = [];
+        
+        // Clear UI
+        this.renderApis([]);
+        this.renderBots([]);
+        this.renderMonitors([]);
+        this.renderChatMessages([]);
+        
+        // Reset counts
+        DOM.apiCount.textContent = '0';
+        DOM.botCount.textContent = '0';
+        DOM.monitorCount.textContent = '0';
+        DOM.chatCount.textContent = '0';
+        DOM.onlineCount.textContent = '0';
+        
+        // Reset stats
+        DOM.totalApis.textContent = '0';
+        DOM.totalJobs.textContent = '0';
+        DOM.totalUsers.textContent = '0';
+        DOM.runningBots.textContent = '0';
+        DOM.trendEnabledApis.textContent = '0';
+        DOM.trendAvgJobs.textContent = '0';
+        DOM.trendSessions.textContent = '0';
+        DOM.trendStoppedBots.textContent = '0';
+        DOM.statEnabledApis.innerHTML = '0<span class="detail-row-sub">/ 0</span>';
+        DOM.statPrivateApis.textContent = '0';
+        DOM.statRunningBots.innerHTML = '0<span class="detail-row-sub">/ 0</span>';
+        DOM.statOnlineMonitors.innerHTML = '0<span class="detail-row-sub">/ 0</span>';
+        DOM.statActiveSessions.textContent = '0';
+        DOM.statAvgJobs.textContent = '0';
+        DOM.statUsersByRole.innerHTML = '<div class="detail-empty">Chưa có dữ liệu</div>';
+        DOM.statTopApis.innerHTML = '<div class="detail-empty">Chưa có dữ liệu</div>';
     }
 
     updateUserUI() {
-        if (state.user) {
+        // Kiểm tra state.user có tồn tại và có id không
+        if (state.user && state.user.id) {
+            // Đã đăng nhập
             DOM.userName.textContent = state.user.username || state.user.name || 'User';
             DOM.userRole.textContent = state.user.role || 'user';
             DOM.authBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i><span>Đăng xuất</span>';
             DOM.userAvatar.src = state.user.avatar || '/assets/images/default-avatar.png';
-            DOM.userAvatar.alt = `Avatar của ${state.user.username}`;
+            DOM.userAvatar.alt = `Avatar của ${state.user.username || 'User'}`;
+            
+            // Hiển thị các nút chỉ dành cho user đã đăng nhập
+            DOM.downloadDbBtn.style.display = 'inline-flex';
+            DOM.backupBtn.style.display = 'inline-flex';
+            
+            // Enable các nút tạo
+            DOM.createApiBtn.disabled = false;
+            DOM.createBotBtn.disabled = false;
+            DOM.createMonitorBtn.disabled = false;
         } else {
+            // Chưa đăng nhập
             DOM.userName.textContent = 'Guest';
             DOM.userRole.textContent = 'visitor';
             DOM.authBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i><span>Đăng nhập</span>';
             DOM.userAvatar.src = '/assets/images/default-avatar.png';
             DOM.userAvatar.alt = 'Default avatar';
+            
+            // Ẩn các nút chỉ dành cho user đã đăng nhập
+            DOM.downloadDbBtn.style.display = 'none';
+            DOM.backupBtn.style.display = 'none';
+            
+            // Disable các nút tạo
+            DOM.createApiBtn.disabled = true;
+            DOM.createBotBtn.disabled = true;
+            DOM.createMonitorBtn.disabled = true;
         }
     }
 
@@ -750,6 +835,12 @@ class JobQueueApp {
     }
 
     async loadTabData(tabId) {
+        // Nếu chưa đăng nhập thì không load dữ liệu
+        if (!state.user || !state.user.id) {
+            this.clearData();
+            return;
+        }
+        
         switch (tabId) {
             case 'apis':
                 await this.loadApis();
@@ -768,6 +859,12 @@ class JobQueueApp {
 
     // ===== DATA LOADING =====
     async loadData() {
+        // Nếu chưa đăng nhập thì không load dữ liệu
+        if (!state.user || !state.user.id) {
+            this.clearData();
+            return;
+        }
+        
         try {
             await Promise.all([
                 this.loadStats(),
@@ -781,7 +878,7 @@ class JobQueueApp {
             }
         } catch (error) {
             console.error('Load data error:', error);
-            this.toast.error('Lỗi tải dữ liệu');
+            // Nếu lỗi 401 thì đã được xử lý trong API client
         }
     }
 
@@ -879,7 +976,9 @@ class JobQueueApp {
             this.renderApis(apis);
         } catch (error) {
             console.error('Load APIs error:', error);
-            DOM.apiList.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Không thể tải danh sách API</p></div>';
+            if (error.message !== 'Vui lòng đăng nhập để tiếp tục') {
+                DOM.apiList.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Không thể tải danh sách API</p></div>';
+            }
         }
     }
 
@@ -889,9 +988,12 @@ class JobQueueApp {
                 <div class="empty-state">
                     <i class="fas fa-code fa-3x"></i>
                     <p>Chưa có API nào</p>
-                    <button class="btn btn-success" onclick="app.showCreateApiForm()">
-                        <i class="fas fa-plus"></i> Tạo API đầu tiên
-                    </button>
+                    ${state.user && state.user.id ? 
+                        `<button class="btn btn-success" onclick="app.showCreateApiForm()">
+                            <i class="fas fa-plus"></i> Tạo API đầu tiên
+                        </button>` : 
+                        `<p style="font-size:0.85rem;color:var(--text-muted);">Vui lòng đăng nhập để tạo API</p>`
+                    }
                 </div>
             `;
             return;
@@ -918,6 +1020,7 @@ class JobQueueApp {
                     <span class="stat-item"><i class="fas fa-tasks"></i> ${api.jobCount || 0} jobs</span>
                     <span class="stat-item"><i class="fas fa-calendar"></i> ${Utils.formatDate(api.createdAt)}</span>
                 </div>
+                ${state.user && state.user.id ? `
                 <div class="card-actions">
                     <button onclick="app.toggleApi(${api.id})" class="btn btn-sm ${api.enabled ? 'btn-warning' : 'btn-success'}">
                         <i class="fas ${api.enabled ? 'fa-pause' : 'fa-play'}"></i>
@@ -929,6 +1032,7 @@ class JobQueueApp {
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
+                ` : ''}
             </div>
         `).join('');
 
@@ -936,6 +1040,12 @@ class JobQueueApp {
     }
 
     showCreateApiForm() {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để tạo API');
+            this.showAuthOptions();
+            return;
+        }
+
         const html = `
             <form id="apiForm" class="modal-form">
                 <div class="form-group">
@@ -994,6 +1104,12 @@ class JobQueueApp {
     }
 
     async toggleApi(id) {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để thực hiện');
+            this.showAuthOptions();
+            return;
+        }
+
         try {
             const api = state.data.apis.find(a => a.id === id);
             if (!api) return;
@@ -1008,6 +1124,12 @@ class JobQueueApp {
     }
 
     editApi(id) {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để thực hiện');
+            this.showAuthOptions();
+            return;
+        }
+
         const api = state.data.apis.find(a => a.id === id);
         if (!api) return;
 
@@ -1069,6 +1191,12 @@ class JobQueueApp {
     }
 
     async deleteApi(id) {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để thực hiện');
+            this.showAuthOptions();
+            return;
+        }
+
         if (!confirm('Bạn có chắc muốn xóa API này?')) return;
 
         try {
@@ -1090,7 +1218,9 @@ class JobQueueApp {
             this.renderBots(bots);
         } catch (error) {
             console.error('Load bots error:', error);
-            DOM.botList.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Không thể tải danh sách bot</p></div>';
+            if (error.message !== 'Vui lòng đăng nhập để tiếp tục') {
+                DOM.botList.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Không thể tải danh sách bot</p></div>';
+            }
         }
     }
 
@@ -1100,9 +1230,12 @@ class JobQueueApp {
                 <div class="empty-state">
                     <i class="fas fa-robot fa-3x"></i>
                     <p>Chưa có bot nào</p>
-                    <button class="btn btn-success" onclick="app.showCreateBotForm()">
-                        <i class="fas fa-plus"></i> Tạo bot đầu tiên
-                    </button>
+                    ${state.user && state.user.id ? 
+                        `<button class="btn btn-success" onclick="app.showCreateBotForm()">
+                            <i class="fas fa-plus"></i> Tạo bot đầu tiên
+                        </button>` : 
+                        `<p style="font-size:0.85rem;color:var(--text-muted);">Vui lòng đăng nhập để tạo bot</p>`
+                    }
                 </div>
             `;
             return;
@@ -1127,6 +1260,7 @@ class JobQueueApp {
                         <span class="stat-item"><i class="fab fa-discord"></i> ${bot.botToken ? 'Đã kết nối' : 'Chưa kết nối'}</span>
                         <span class="stat-item"><i class="fas fa-calendar"></i> ${Utils.formatDate(bot.createdAt)}</span>
                     </div>
+                    ${state.user && state.user.id ? `
                     <div class="card-actions">
                         ${isRunning 
                             ? `<button onclick="app.stopBot(${bot.id})" class="btn btn-sm btn-danger"><i class="fas fa-stop"></i></button>`
@@ -1135,6 +1269,7 @@ class JobQueueApp {
                         <button onclick="app.editBot(${bot.id})" class="btn btn-sm btn-primary"><i class="fas fa-edit"></i></button>
                         <button onclick="app.deleteBot(${bot.id})" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button>
                     </div>
+                    ` : ''}
                 </div>
             `;
         }).join('');
@@ -1143,6 +1278,12 @@ class JobQueueApp {
     }
 
     showCreateBotForm() {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để tạo bot');
+            this.showAuthOptions();
+            return;
+        }
+
         const html = `
             <form id="botForm" class="modal-form">
                 <div class="form-group">
@@ -1192,6 +1333,12 @@ class JobQueueApp {
     }
 
     async startBot(id) {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để thực hiện');
+            this.showAuthOptions();
+            return;
+        }
+
         try {
             await this.api.startBot(id);
             this.toast.success('Bot đã được khởi động');
@@ -1203,6 +1350,12 @@ class JobQueueApp {
     }
 
     async stopBot(id) {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để thực hiện');
+            this.showAuthOptions();
+            return;
+        }
+
         try {
             await this.api.stopBot(id);
             this.toast.success('Bot đã được dừng');
@@ -1214,6 +1367,12 @@ class JobQueueApp {
     }
 
     editBot(id) {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để thực hiện');
+            this.showAuthOptions();
+            return;
+        }
+
         const bot = state.data.bots.find(b => b.id === id);
         if (!bot) return;
 
@@ -1265,6 +1424,12 @@ class JobQueueApp {
     }
 
     async deleteBot(id) {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để thực hiện');
+            this.showAuthOptions();
+            return;
+        }
+
         if (!confirm('Bạn có chắc muốn xóa bot này?')) return;
 
         try {
@@ -1286,7 +1451,9 @@ class JobQueueApp {
             this.renderMonitors(monitors);
         } catch (error) {
             console.error('Load monitors error:', error);
-            DOM.monitorList.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Không thể tải danh sách monitor</p></div>';
+            if (error.message !== 'Vui lòng đăng nhập để tiếp tục') {
+                DOM.monitorList.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Không thể tải danh sách monitor</p></div>';
+            }
         }
     }
 
@@ -1296,9 +1463,12 @@ class JobQueueApp {
                 <div class="empty-state">
                     <i class="fas fa-heartbeat fa-3x"></i>
                     <p>Chưa có monitor nào</p>
-                    <button class="btn btn-success" onclick="app.showCreateMonitorForm()">
-                        <i class="fas fa-plus"></i> Tạo monitor đầu tiên
-                    </button>
+                    ${state.user && state.user.id ? 
+                        `<button class="btn btn-success" onclick="app.showCreateMonitorForm()">
+                            <i class="fas fa-plus"></i> Tạo monitor đầu tiên
+                        </button>` : 
+                        `<p style="font-size:0.85rem;color:var(--text-muted);">Vui lòng đăng nhập để tạo monitor</p>`
+                    }
                 </div>
             `;
             return;
@@ -1327,10 +1497,12 @@ class JobQueueApp {
                         <span class="stat-item"><i class="fas fa-clock"></i> ${monitor.interval || 60}s</span>
                         <span class="stat-item"><i class="fas fa-calendar"></i> ${Utils.formatDate(monitor.createdAt)}</span>
                     </div>
+                    ${state.user && state.user.id ? `
                     <div class="card-actions">
                         <button onclick="app.editMonitor(${monitor.id})" class="btn btn-sm btn-primary"><i class="fas fa-edit"></i></button>
                         <button onclick="app.deleteMonitor(${monitor.id})" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button>
                     </div>
+                    ` : ''}
                 </div>
             `;
         }).join('');
@@ -1339,6 +1511,12 @@ class JobQueueApp {
     }
 
     showCreateMonitorForm() {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để tạo monitor');
+            this.showAuthOptions();
+            return;
+        }
+
         const html = `
             <form id="monitorForm" class="modal-form">
                 <div class="form-group">
@@ -1387,6 +1565,12 @@ class JobQueueApp {
     }
 
     editMonitor(id) {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để thực hiện');
+            this.showAuthOptions();
+            return;
+        }
+
         const monitor = state.data.monitors.find(m => m.id === id);
         if (!monitor) return;
 
@@ -1438,6 +1622,12 @@ class JobQueueApp {
     }
 
     async deleteMonitor(id) {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để thực hiện');
+            this.showAuthOptions();
+            return;
+        }
+
         if (!confirm('Bạn có chắc muốn xóa monitor này?')) return;
 
         try {
@@ -1452,6 +1642,19 @@ class JobQueueApp {
 
     // ===== CHAT =====
     async loadChat() {
+        if (!state.user || !state.user.id) {
+            DOM.chatMessages.innerHTML = `
+                <div style="text-align:center;padding:40px 20px;color:var(--text-muted);">
+                    <i class="fas fa-comment-dots fa-3x" style="margin-bottom:12px;opacity:0.5;"></i>
+                    <p>Vui lòng đăng nhập để tham gia chat</p>
+                    <button class="btn btn-primary" onclick="app.showAuthOptions()" style="margin-top:12px;">
+                        <i class="fas fa-sign-in-alt"></i> Đăng nhập
+                    </button>
+                </div>
+            `;
+            return;
+        }
+
         try {
             const [messages, online] = await Promise.all([
                 this.api.getChatMessages(),
@@ -1494,6 +1697,12 @@ class JobQueueApp {
     }
 
     async sendChatMessage() {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để gửi tin nhắn');
+            this.showAuthOptions();
+            return;
+        }
+
         const content = DOM.chatInput.value.trim();
         if (!content) {
             this.toast.warning('Vui lòng nhập tin nhắn');
@@ -1515,6 +1724,12 @@ class JobQueueApp {
 
     // ===== SYSTEM FUNCTIONS =====
     async handleDownloadDb() {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để thực hiện');
+            this.showAuthOptions();
+            return;
+        }
+
         try {
             await this.api.downloadDb();
             this.toast.success('Tải database thành công!');
@@ -1524,6 +1739,12 @@ class JobQueueApp {
     }
 
     async handleBackup() {
+        if (!state.user || !state.user.id) {
+            this.toast.warning('Vui lòng đăng nhập để thực hiện');
+            this.showAuthOptions();
+            return;
+        }
+
         try {
             const result = await this.api.backup();
             this.toast.success(result.message || 'Backup thành công!');
@@ -1535,9 +1756,11 @@ class JobQueueApp {
     // ===== AUTO REFRESH =====
     setupAutoRefresh() {
         this.refreshTimer = setInterval(() => {
-            this.loadStats();
-            if (state.currentTab !== 'chat') {
-                this.loadTabData(state.currentTab);
+            if (state.user && state.user.id) {
+                this.loadStats();
+                if (state.currentTab !== 'chat') {
+                    this.loadTabData(state.currentTab);
+                }
             }
         }, CONFIG.REFRESH_INTERVAL);
     }
@@ -1548,7 +1771,7 @@ class JobQueueApp {
             this.chatTimer = null;
         }
         this.chatTimer = setInterval(() => {
-            if (state.currentTab === 'chat') {
+            if (state.currentTab === 'chat' && state.user && state.user.id) {
                 this.loadChat();
             }
         }, CONFIG.CHAT_REFRESH_INTERVAL);
