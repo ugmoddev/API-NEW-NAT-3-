@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-src https://link4sub.com https://onthitracnghiem.com; img-src 'self' data: https:; style-src 'self'; script-src 'self'; connect-src 'self';">
+  <title>Link4Sub | Trình mở an toàn</title>
+  <link rel="stylesheet" href="/link4sub.css">
+  <script src="/link4sub.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">SAFE LINK GATE</p>
+        <h1>Link4Sub <span>→</span> OnThiTracNghiem</h1>
+        <p class="subtitle">Mở liên kết trong iframe với allowlist chỉ gồm hai miền được phép.</p>
+      </div>
+      <div class="badge"><span class="dot"></span> Allowlist active</div>
+    </section>
+
+    <section class="panel controls" aria-labelledby="controls-title">
+      <div class="panel-heading">
+        <div>
+          <p class="section-kicker">CONTROL PANEL</p>
+          <h2 id="controls-title">Điều hướng được kiểm soát</h2>
+        </div>
+        <a class="download" href="/userscripts/auto-click-link4sub.user.js" download>Tải UserScript</a>
+      </div>
+      <form id="urlForm" class="url-form" novalidate>
+        <label for="urlInput">URL đích</label>
+        <div class="input-row">
+          <input id="urlInput" name="url" type="url" value="https://link4sub.com/O03GrwdHOO" autocomplete="off" spellcheck="false">
+          <button type="submit">Mở trong iframe</button>
+        </div>
+        <p id="message" class="message" role="status">Chỉ chấp nhận https://link4sub.com và https://onthitracnghiem.com.</p>
+      </form>
+    </section>
+
+    <section class="panel frame-panel" aria-labelledby="frame-title">
+      <div class="frame-toolbar">
+        <div>
+          <p class="section-kicker">PREVIEW</p>
+          <h2 id="frame-title">Nội dung được nhúng</h2>
+        </div>
+        <span id="frameOrigin" class="origin">link4sub.com</span>
+      </div>
+      <div class="frame-wrap">
+        <iframe id="safeFrame" title="Nội dung Link4Sub được allowlist" src="https://link4sub.com/O03GrwdHOO" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" loading="eager"></iframe>
+        <div id="frameFallback" class="fallback" hidden>
+          <strong>Không thể nhúng trang này.</strong>
+          <span>Trang đích có thể đang chặn iframe bằng chính sách bảo mật của họ.</span>
+        </div>
+      </div>
+      <p class="security-note"><span>●</span> Bảo vệ bằng CSP <code>frame-src</code> và sandbox. Điều hướng ngoài allowlist sẽ bị trình duyệt chặn.</p>
+    </section>
+
+    <footer>Được phép: <code>https://link4sub.com</code> · <code>https://onthitracnghiem.com</code></footer>
+  </main>
+</body>
+</html>
