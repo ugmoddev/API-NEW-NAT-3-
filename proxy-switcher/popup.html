@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Proxy Switcher</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="header">
+      <div class="brand"><span class="brand-mark">↯</span><div><h1>Proxy Switcher</h1><p>Local profile control</p></div></div>
+      <span id="header-status" class="status-pill disconnected"><i></i>DISCONNECTED</span>
+    </header>
+
+    <section class="current-card panel">
+      <div class="section-label">CURRENT PROXY <span id="current-number"></span></div>
+      <div id="current-address" class="current-address">No proxy selected</div>
+      <div id="current-credentials" class="credentials">Import a list to get started</div>
+      <div id="current-error" class="error-message hidden"></div>
+    </section>
+
+    <section class="panel import-panel">
+      <div class="section-heading"><div><h2>Import proxies</h2><p>One per line: host:port[:user:pass]</p></div><select id="proxy-type" aria-label="Proxy type"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks4">SOCKS4</option><option value="socks5">SOCKS5</option></select></div>
+      <div class="import-actions"><button id="upload-btn" class="button secondary">Upload TXT</button><button id="paste-btn" class="button secondary">Paste proxies</button><input id="file-input" type="file" accept=".txt,text/plain" hidden></div>
+      <textarea id="paste-area" class="paste-area hidden" placeholder="127.0.0.1:8080&#10;192.168.1.10:3128:admin:password"></textarea>
+      <button id="import-paste-btn" class="button primary hidden">Import pasted proxies</button>
+      <p id="import-feedback" class="feedback"></p>
+    </section>
+
+    <section class="panel list-panel">
+      <div class="section-heading"><div><h2>Proxy list</h2><p id="proxy-count">0 profiles</p></div><button id="clear-btn" class="text-button">Clear all</button></div>
+      <div id="proxy-list" class="proxy-list"><div class="empty-state">No proxy profiles yet</div></div>
+    </section>
+
+    <section class="controls"><button id="connect-btn" class="button primary">Connect</button><button id="disconnect-btn" class="button outline">Disconnect</button><button id="switch-btn" class="button shortcut-button">Switch next <kbd>Ctrl ⇧ P</kbd></button></section>
+
+    <section class="shortcut panel"><div class="shortcut-icon">⌘</div><div><div class="section-label">KEYBOARD SHORTCUT</div><strong>CTRL + SHIFT + P</strong><p>First press connects #1 · Next press switches · Last press wraps to #1</p></div></section>
+
+    <details class="settings panel"><summary>Settings</summary><label><input id="auto-skip" type="checkbox"> Auto-skip failed proxies</label><label><input id="auto-connect" type="checkbox"> Auto-connect last proxy on startup</label><p>Passwords stay local in <code>chrome.storage.local</code>; nothing is sent to an external server.</p></details>
+    <footer>Shortcut settings: <a href="chrome://extensions/shortcuts" id="shortcut-link">chrome://extensions/shortcuts</a></footer>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
