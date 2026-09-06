@@ -4,9 +4,17 @@ import { loadState, patchState } from './modules/storage.js';
 
 const manager = new ProxyManager();
 
+async function reloadActiveTab() {
+  const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const tab = tabs[0];
+  if (!tab?.id) return;
+  try { await chrome.tabs.reload(tab.id, { bypassCache: false }); }
+  catch (_error) { /* Chrome pages and restricted tabs cannot be reloaded by extensions. */ }
+}
+
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== 'switch-proxy') return;
-  try { await manager.switchToNext(); }
+  try { await manager.switchToNext(); await reloadActiveTab(); }
   catch (error) { await patchState({ status: 'ERROR', currentError: error.message || 'CONNECTION FAILED' }); }
 });
 
@@ -24,9 +32,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     switch (message.type) {
       case 'get-state': return manager.getState();
-      case 'connect': return manager.connect(message.index);
+      case 'connect': {
+        const result = await manager.connect(message.index);
+        await reloadActiveTab();
+        return result;
+      }
       case 'disconnect': return manager.disconnect();
-      case 'switch-next': return manager.switchToNext();
+      case 'switch-next': {
+        const result = await manager.switchToNext();
+        await reloadActiveTab();
+        return result;
+      }
       case 'add-proxies': return manager.addProxies(message.proxies || []);
       case 'remove-proxy': return manager.removeProxy(message.id);
       case 'clear-proxies': return manager.clearProxies();

@@ -6,6 +6,7 @@
   "permissions": [
     "proxy",
     "storage",
+    "tabs",
     "webRequest",
     "webRequestAuthProvider"
   ],

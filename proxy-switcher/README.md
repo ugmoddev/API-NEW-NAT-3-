@@ -5,6 +5,7 @@ A local-only Chrome/Chromium extension for switching between proxy profiles with
 ## Features
 
 - Import `.txt` files or paste multiple proxy profiles.
+- The **Paste proxies** button reads the clipboard and imports its contents directly; manual multiline editing remains available if clipboard access is unavailable.
 - Supports HTTP, HTTPS, SOCKS4, and SOCKS5 profile labels. Chrome's proxy API uses `http` for both HTTP and HTTPS proxy endpoints; the UI preserves the selected profile type and clearly routes SOCKS4/SOCKS5 through their native schemes.
 - Removes blank and duplicate entries.
 - Global `Ctrl+Shift+P` (`MacCtrl+Shift+P` on macOS) command:
@@ -16,6 +17,7 @@ A local-only Chrome/Chromium extension for switching between proxy profiles with
 - Optional bounded auto-skip for profiles that fail to apply.
 - Optional auto-connect of the last profile on Chrome startup.
 - Proxy authentication through Manifest V3's `webRequestAuthProvider` flow.
+- After a successful Connect or Switch action, the currently active tab is reloaded once, equivalent to pressing `F5`. Restricted `chrome://` and browser-internal pages are left unchanged.
 
 ## Install
 
@@ -26,7 +28,7 @@ A local-only Chrome/Chromium extension for switching between proxy profiles with
 5. Choose the `proxy-switcher/` directory.
 6. Open the extension popup and import a TXT file or paste proxy lines.
 7. Confirm the command at `chrome://extensions/shortcuts`. If Chrome assigns a different shortcut or reports a conflict, click the shortcut field and set `Ctrl+Shift+P` manually.
-8. Press `Ctrl+Shift+P` from any tab, including when the popup is closed or another site is active.
+8. Press `Ctrl+Shift+P` from any tab, including when the popup is closed or another site is active. After connection, that active tab is automatically refreshed.
 
 ## Proxy format
 

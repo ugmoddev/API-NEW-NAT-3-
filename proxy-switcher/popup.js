@@ -67,7 +67,24 @@ async function importText(text) {
 
 $('#upload-btn').addEventListener('click', () => $('#file-input').click());
 $('#file-input').addEventListener('change', async (event) => { const file = event.target.files[0]; if (file) await importText(await file.text()); event.target.value = ''; });
-$('#paste-btn').addEventListener('click', () => { $('#paste-area').classList.toggle('hidden'); $('#import-paste-btn').classList.toggle('hidden'); if (!$('#paste-area').classList.contains('hidden')) $('#paste-area').focus(); });
+$('#paste-btn').addEventListener('click', async () => {
+  $('#paste-area').classList.remove('hidden');
+  $('#import-paste-btn').classList.remove('hidden');
+  try {
+    const clipboardText = await navigator.clipboard.readText();
+    if (clipboardText.trim()) {
+      $('#paste-area').value = clipboardText;
+      await importText(clipboardText);
+    } else {
+      $('#import-feedback').textContent = 'Clipboard is empty.';
+      $('#import-feedback').className = 'feedback bad';
+    }
+  } catch (_error) {
+    $('#import-feedback').textContent = 'Clipboard access was unavailable. Paste manually below.';
+    $('#import-feedback').className = 'feedback bad';
+    $('#paste-area').focus();
+  }
+});
 $('#import-paste-btn').addEventListener('click', async () => { await importText($('#paste-area').value); $('#paste-area').value = ''; });
 $('#connect-btn').addEventListener('click', () => run(() => send('connect', { index: state.currentIndex >= 0 ? state.currentIndex : 0 })));
 $('#disconnect-btn').addEventListener('click', () => run(() => send('disconnect')));
