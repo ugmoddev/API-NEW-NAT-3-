@@ -26,7 +26,7 @@ chrome.webRequest.onAuthRequired.addListener(
 
 chrome.webRequest.onErrorOccurred.addListener(async (details) => {
   if (details.isProxy && details.error?.toLowerCase().includes('auth')) await markAuthenticationFailure(details);
-});
+}, { urls: ['<all_urls>'] });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {

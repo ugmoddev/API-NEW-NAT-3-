@@ -64,4 +64,6 @@ The service worker is the only owner of proxy state and switching. The popup is 
 
 ## Permissions
 
-The extension requests only `proxy`, `storage`, `webRequest`, and `webRequestAuthProvider`. The proxy permission is required to apply fixed-server settings, storage persists the local state, and the webRequest permissions handle proxy credentials and authentication errors.
+The extension requests `proxy`, `storage`, `tabs`, `webRequest`, and `webRequestAuthProvider`, plus `<all_urls>` host access. The proxy permission is required to apply fixed-server settings, storage persists the local state, `tabs` reloads the active tab after connecting, and the webRequest permissions handle proxy credentials and authentication errors. `<all_urls>` is required because authentication challenges can come from any site visited through the selected proxy.
+
+If Chrome shows **Service worker registration failed**, replace the old unpacked folder with the latest `proxy-switcher/` folder, then use **Reload** on `chrome://extensions`. The updated manifest includes the host permission and corrected webRequest listener registration.
