@@ -11,9 +11,13 @@ function isValidPort(port) {
 }
 
 export function parseProxyLine(line, type = 'http') {
-  const value = String(line ?? '').trim();
+  let value = String(line ?? '').replace(/^\uFEFF/, '').trim();
   if (!value) return null;
   if (!PROXY_TYPES.includes(type)) throw new Error(`Unsupported proxy type: ${type}`);
+
+  // Accept common copied forms such as http://host:port while storing only
+  // the host and port required by Chrome's proxy settings API.
+  value = value.replace(/^(https?|socks4|socks5):\/\//i, '');
 
   const parts = value.split(':');
   if (parts.length !== 2 && parts.length !== 4) {
@@ -44,7 +48,7 @@ export function parseProxyText(text, type = 'http') {
   const invalid = [];
   const seen = new Set();
 
-  String(text ?? '').split(/\r?\n/).forEach((line, index) => {
+  String(text ?? '').replace(/^\uFEFF/, '').split(/\r?\n/).forEach((line, index) => {
     if (!line.trim()) return;
     try {
       const proxy = parseProxyLine(line, type);

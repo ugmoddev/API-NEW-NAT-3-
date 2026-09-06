@@ -1,3 +1,5 @@
+import { parseProxyText } from './modules/proxy-parser.js';
+
 const $ = (selector) => document.querySelector(selector);
 const send = (type, payload = {}) => new Promise((resolve, reject) => chrome.runtime.sendMessage({ type, ...payload }, (response) => {
   if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
@@ -50,17 +52,21 @@ async function run(action) { try { const result = await action(); if (result?.er
 
 async function importText(text) {
   const type = $('#proxy-type').value;
-  const lines = String(text).split(/\r?\n/);
-  const parsed = []; const seen = new Set(); const invalid = [];
-  lines.forEach((line, index) => {
-    const value = line.trim(); if (!value) return;
-    const parts = value.split(':');
-    if (![2, 4].includes(parts.length) || !parts[0] || !/^\d+$/.test(parts[1]) || Number(parts[1]) < 1 || Number(parts[1]) > 65535 || (parts.length === 4 && (!parts[2] || !parts[3]))) { invalid.push(index + 1); return; }
-    const key = `${type}|${value}`; if (seen.has(key)) return; seen.add(key);
-    parsed.push({ host: parts[0], port: Number(parts[1]), type, username: parts[2] || '', password: parts[3] || '', source: value });
-  });
-  if (!parsed.length) { $('#import-feedback').textContent = invalid.length ? `No valid proxies. Invalid lines: ${invalid.join(', ')}` : 'Nothing to import.'; $('#import-feedback').className = 'feedback bad'; return; }
-  await run(() => send('add-proxies', { proxies: parsed }));
+  const { proxies: parsed, invalid } = parseProxyText(text, type);
+  if (!parsed.length) {
+    const lines = invalid.map((item) => item.line).join(', ');
+    $('#import-feedback').textContent = lines ? `No valid proxies. Invalid lines: ${lines}` : 'Nothing to import.';
+    $('#import-feedback').className = 'feedback bad';
+    return;
+  }
+  try {
+    await send('add-proxies', { proxies: parsed });
+  } catch (error) {
+    $('#import-feedback').textContent = `Import failed: ${error.message}`;
+    $('#import-feedback').className = 'feedback bad';
+    return;
+  }
+  await refresh();
   $('#import-feedback').textContent = `${parsed.length} proxy${parsed.length === 1 ? '' : 'ies'} imported${invalid.length ? ` · skipped ${invalid.length} invalid` : ''}.`;
   $('#import-feedback').className = 'feedback';
 }
