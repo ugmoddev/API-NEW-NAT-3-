@@ -33,11 +33,11 @@
       <div id="proxy-list" class="proxy-list"><div class="empty-state">No proxy profiles yet</div></div>
     </section>
 
-    <section class="controls"><button id="connect-btn" class="button primary">Connect</button><button id="disconnect-btn" class="button outline">Disconnect</button><button id="switch-btn" class="button shortcut-button">Switch next <kbd>Ctrl ⇧ P</kbd></button></section>
+    <section class="controls"><button id="connect-btn" class="button primary">Connect</button><button id="disconnect-btn" class="button outline">Disconnect</button><button id="switch-btn" class="button shortcut-button">Switch next <kbd>Ctrl ⇧ X</kbd></button></section>
 
-    <section class="shortcut panel"><div class="shortcut-icon">⌘</div><div><div class="section-label">KEYBOARD SHORTCUT</div><strong>CTRL + SHIFT + P</strong><p>First press connects #1 · Next press switches · Last press wraps to #1</p></div></section>
+    <section class="shortcut panel"><div class="shortcut-icon">⌘</div><div><div class="section-label">KEYBOARD SHORTCUT</div><strong>CTRL + SHIFT + X</strong><p>First press connects #1 · Next press switches · Last press wraps to #1</p></div></section>
 
-    <details class="settings panel"><summary>Settings</summary><label><input id="auto-skip" type="checkbox"> Auto-skip failed proxies</label><label><input id="auto-connect" type="checkbox"> Auto-connect last proxy on startup</label><p>Passwords stay local in <code>chrome.storage.local</code>; nothing is sent to an external server.</p></details>
+    <details class="settings panel"><summary>Settings</summary><label><input id="auto-skip" type="checkbox"> Auto-skip failed proxies</label><label><input id="auto-connect" type="checkbox"> Auto-connect last proxy on startup</label><label><input id="auto-rotate" type="checkbox"> Auto Rotate every 5 seconds</label><p>Passwords stay local in <code>chrome.storage.local</code>; nothing is sent to an external server.</p></details>
     <footer>Shortcut settings: <a href="chrome://extensions/shortcuts" id="shortcut-link">chrome://extensions/shortcuts</a></footer>
   </main>
   <script type="module" src="popup.js"></script>

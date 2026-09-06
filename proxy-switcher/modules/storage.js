@@ -5,6 +5,7 @@ export const DEFAULT_STATE = {
   currentError: '',
   autoSkipFailed: false,
   autoConnectOnStartup: false,
+  autoRotate: false,
   updatedAt: 0
 };
 

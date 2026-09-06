@@ -32,6 +32,7 @@ function render() {
   $('#proxy-count').textContent = `${state?.proxies?.length || 0} profile${state?.proxies?.length === 1 ? '' : 's'}`;
   $('#auto-skip').checked = Boolean(state?.autoSkipFailed);
   $('#auto-connect').checked = Boolean(state?.autoConnectOnStartup);
+  $('#auto-rotate').checked = Boolean(state?.autoRotate);
 
   const list = $('#proxy-list');
   list.innerHTML = '';
@@ -98,6 +99,7 @@ $('#switch-btn').addEventListener('click', () => run(() => send('switch-next')))
 $('#clear-btn').addEventListener('click', () => run(() => send('clear-proxies')));
 $('#auto-skip').addEventListener('change', (event) => run(() => send('update-settings', { patch: { autoSkipFailed: event.target.checked } })));
 $('#auto-connect').addEventListener('change', (event) => run(() => send('update-settings', { patch: { autoConnectOnStartup: event.target.checked } })));
+$('#auto-rotate').addEventListener('change', (event) => run(() => send('update-settings', { patch: { autoRotate: event.target.checked } })));
 $('#shortcut-link').addEventListener('click', (event) => { event.preventDefault(); chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }); });
 chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.proxySwitcherState) { state = changes.proxySwitcherState.newValue; render(); } });
 refresh().catch((error) => { $('#import-feedback').textContent = error.message; });

@@ -7,6 +7,7 @@
     "proxy",
     "storage",
     "tabs",
+    "alarms",
     "webRequest",
     "webRequestAuthProvider"
   ],
@@ -34,8 +35,8 @@
   "commands": {
     "switch-proxy": {
       "suggested_key": {
-        "default": "Ctrl+Shift+P",
-        "mac": "MacCtrl+Shift+P"
+        "default": "Ctrl+Shift+X",
+        "mac": "MacCtrl+Shift+X"
       },
       "description": "Disconnect current proxy and connect the next proxy"
     }
