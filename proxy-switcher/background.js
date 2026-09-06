@@ -3,8 +3,7 @@ import { handleAuthRequired, markAuthenticationFailure } from './modules/auth.js
 import { loadState, patchState } from './modules/storage.js';
 
 const manager = new ProxyManager();
-const ROTATE_ALARM = 'auto-rotate-watchdog';
-let rotateTimer = null;
+let rotateTimeout = null;
 let rotationInProgress = false;
 
 async function reloadActiveTab() {
@@ -30,15 +29,19 @@ async function rotateOnce() {
   }
 }
 
-function startAutoRotate() {
-  if (!rotateTimer) rotateTimer = setInterval(() => rotateOnce(), 5000);
-  chrome.alarms.create(ROTATE_ALARM, { periodInMinutes: 0.5 });
+async function scheduleAfterLoad(tabId) {
+  if (rotateTimeout) clearTimeout(rotateTimeout);
+  rotateTimeout = setTimeout(async () => {
+    rotateTimeout = null;
+    const state = await manager.getState();
+    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (state.autoRotate && tabs[0]?.id === tabId) await rotateOnce();
+  }, 1000);
 }
 
 function stopAutoRotate() {
-  if (rotateTimer) clearInterval(rotateTimer);
-  rotateTimer = null;
-  chrome.alarms.clear(ROTATE_ALARM);
+  if (rotateTimeout) clearTimeout(rotateTimeout);
+  rotateTimeout = null;
 }
 
 chrome.commands.onCommand.addListener(async (command) => {
@@ -47,11 +50,12 @@ chrome.commands.onCommand.addListener(async (command) => {
   catch (error) { await patchState({ status: 'ERROR', currentError: error.message || 'CONNECTION FAILED' }); }
 });
 
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name !== ROTATE_ALARM) return;
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+  if (changeInfo.status !== 'complete') return;
   const state = await manager.getState();
-  if (state.autoRotate) startAutoRotate();
-  else stopAutoRotate();
+  if (!state.autoRotate) return;
+  const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (tabs[0]?.id === tabId) await scheduleAfterLoad(tabId);
 });
 
 chrome.webRequest.onAuthRequired.addListener(
@@ -86,7 +90,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const patch = message.patch || {};
         const next = await patchState(patch);
         if (Object.prototype.hasOwnProperty.call(patch, 'autoRotate')) {
-          if (next.autoRotate) startAutoRotate();
+          if (next.autoRotate) {
+            const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+            if (tabs[0]?.id) await scheduleAfterLoad(tabs[0].id);
+          }
           else stopAutoRotate();
         }
         return next;
@@ -99,7 +106,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 chrome.runtime.onStartup.addListener(async () => {
   const state = await loadState();
-  if (state.autoRotate) startAutoRotate();
+  if (state.autoRotate) {
+    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (tabs[0]?.id && tabs[0].status === 'complete') await scheduleAfterLoad(tabs[0].id);
+  }
   if (state.autoConnectOnStartup && state.proxies.length && state.currentIndex >= 0) {
     try { await manager.connect(state.currentIndex); }
     catch (error) { await patchState({ status: 'ERROR', currentError: 'CONNECTION FAILED' }); }

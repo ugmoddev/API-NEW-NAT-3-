@@ -16,7 +16,7 @@ A local-only Chrome/Chromium extension for switching between proxy profiles with
 - Live `CONNECTED`, `DISCONNECTED`, and `ERROR` state persisted in the service worker's storage.
 - Optional bounded auto-skip for profiles that fail to apply.
 - Optional auto-connect of the last profile on Chrome startup.
-- Optional **Auto Rotate every 5 seconds** mode. Each rotation disconnects the current profile, connects the next profile, and reloads the active tab.
+- Optional **Auto Rotate after load + 1 second** mode. The extension waits for the active tab's `status: complete`, waits one additional second, disconnects the current profile, connects the next profile, and reloads the active tab. The next cycle starts only after that reload completes.
 - Proxy authentication through Manifest V3's `webRequestAuthProvider` flow.
 - After a successful Connect or Switch action, the currently active tab is reloaded once, equivalent to pressing `F5`. Restricted `chrome://` and browser-internal pages are left unchanged.
 
@@ -65,6 +65,6 @@ The service worker is the only owner of proxy state and switching. The popup is 
 
 ## Permissions
 
-The extension requests `proxy`, `storage`, `tabs`, `alarms`, `webRequest`, and `webRequestAuthProvider`, plus `<all_urls>` host access. The proxy permission is required to apply fixed-server settings, storage persists the local state, `tabs` reloads the active tab after connecting, `alarms` restores the five-second rotation timer when the service worker wakes, and the webRequest permissions handle proxy credentials and authentication errors. `<all_urls>` is required because authentication challenges can come from any site visited through the selected proxy.
+The extension requests `proxy`, `storage`, `tabs`, `webRequest`, and `webRequestAuthProvider`, plus `<all_urls>` host access. The proxy permission is required to apply fixed-server settings, storage persists the local state, `tabs` observes/reloads the active tab, and the webRequest permissions handle proxy credentials and authentication errors. `<all_urls>` is required because authentication challenges can come from any site visited through the selected proxy.
 
 If Chrome shows **Service worker registration failed**, replace the old unpacked folder with the latest `proxy-switcher/` folder, then use **Reload** on `chrome://extensions`. The updated manifest includes the host permission and corrected webRequest listener registration.

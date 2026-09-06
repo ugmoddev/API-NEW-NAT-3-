@@ -7,7 +7,6 @@
     "proxy",
     "storage",
     "tabs",
-    "alarms",
     "webRequest",
     "webRequestAuthProvider"
   ],
