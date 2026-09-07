@@ -37,6 +37,8 @@
 
     <section class="shortcut panel"><div class="shortcut-icon">⌘</div><div><div class="section-label">KEYBOARD SHORTCUT</div><strong>CTRL + SHIFT + X</strong><p>First press connects #1 · Next press switches · Last press wraps to #1</p></div></section>
 
+    <section class="target-tabs panel"><div class="section-heading"><div><h2>Target tabs</h2><p>Only checked tabs reload and trigger Auto Rotate</p></div><button id="refresh-tabs-btn" class="text-button">Refresh</button></div><div id="target-tab-list" class="target-tab-list"><div class="empty-state">Loading tabs…</div></div><p class="target-hint">No checked tab means the current active tab is used.</p></section>
+
     <details class="settings panel"><summary>Settings</summary><label><input id="auto-skip" type="checkbox"> Auto-skip failed proxies</label><label><input id="auto-connect" type="checkbox"> Auto-connect last proxy on startup</label><label><input id="auto-rotate" type="checkbox"> Auto Rotate after load + 1 second</label><p>After the active tab finishes loading, the extension waits 1 second, switches proxy, and reloads the tab. Passwords stay local in <code>chrome.storage.local</code>.</p></details>
     <footer>Shortcut settings: <a href="chrome://extensions/shortcuts" id="shortcut-link">chrome://extensions/shortcuts</a></footer>
   </main>

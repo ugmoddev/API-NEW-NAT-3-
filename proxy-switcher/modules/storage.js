@@ -6,6 +6,7 @@ export const DEFAULT_STATE = {
   autoSkipFailed: false,
   autoConnectOnStartup: false,
   autoRotate: false,
+  targetTabIds: [],
   updatedAt: 0
 };
 

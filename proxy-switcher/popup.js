@@ -48,7 +48,25 @@ function render() {
 }
 
 function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]); }
-async function refresh() { state = await send('get-state'); render(); }
+async function renderTargetTabs() {
+  const list = $('#target-tab-list');
+  const tabs = await chrome.tabs.query({});
+  const selected = new Set(state?.targetTabIds || []);
+  list.innerHTML = '';
+  tabs.filter((tab) => tab.id && !tab.url?.startsWith('chrome://')).forEach((tab) => {
+    const label = tab.title || tab.url || `Tab ${tab.id}`;
+    const row = document.createElement('label');
+    row.className = 'target-tab';
+    row.innerHTML = `<input type="checkbox" data-tab-id="${tab.id}" ${selected.has(tab.id) ? 'checked' : ''}><span class="target-tab-title">${escapeHtml(label)}</span><span class="target-tab-id">#${tab.id}</span>`;
+    row.querySelector('input').addEventListener('change', async () => {
+      const ids = [...list.querySelectorAll('input:checked')].map((input) => Number(input.dataset.tabId));
+      await run(() => send('update-settings', { patch: { targetTabIds: ids } }));
+    });
+    list.appendChild(row);
+  });
+  if (!list.children.length) list.innerHTML = '<div class="empty-state">No selectable tabs</div>';
+}
+async function refresh() { state = await send('get-state'); render(); await renderTargetTabs(); }
 async function run(action) { try { const result = await action(); if (result?.error) throw new Error(result.error); await refresh(); } catch (error) { $('#import-feedback').textContent = error.message; $('#import-feedback').className = 'feedback bad'; await refresh().catch(() => {}); } }
 
 async function importText(text) {
@@ -100,6 +118,7 @@ $('#clear-btn').addEventListener('click', () => run(() => send('clear-proxies'))
 $('#auto-skip').addEventListener('change', (event) => run(() => send('update-settings', { patch: { autoSkipFailed: event.target.checked } })));
 $('#auto-connect').addEventListener('change', (event) => run(() => send('update-settings', { patch: { autoConnectOnStartup: event.target.checked } })));
 $('#auto-rotate').addEventListener('change', (event) => run(() => send('update-settings', { patch: { autoRotate: event.target.checked } })));
+$('#refresh-tabs-btn').addEventListener('click', () => renderTargetTabs());
 $('#shortcut-link').addEventListener('click', (event) => { event.preventDefault(); chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }); });
 chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.proxySwitcherState) { state = changes.proxySwitcherState.newValue; render(); } });
 refresh().catch((error) => { $('#import-feedback').textContent = error.message; });

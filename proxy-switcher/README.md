@@ -17,6 +17,7 @@ A local-only Chrome/Chromium extension for switching between proxy profiles with
 - Optional bounded auto-skip for profiles that fail to apply.
 - Optional auto-connect of the last profile on Chrome startup.
 - Optional **Auto Rotate after load + 1 second** mode. The extension waits for the active tab's `status: complete`, waits one additional second, disconnects the current profile, connects the next profile, and reloads the active tab. The next cycle starts only after that reload completes.
+- A **Target tabs** selector lets you choose exactly which open tabs participate. Selected tabs are reloaded after switching and any selected tab finishing a load can trigger the next cycle. If no tab is checked, the currently active tab is used as the default.
 - Proxy authentication through Manifest V3's `webRequestAuthProvider` flow.
 - After a successful Connect or Switch action, the currently active tab is reloaded once, equivalent to pressing `F5`. Restricted `chrome://` and browser-internal pages are left unchanged.
 
@@ -29,7 +30,7 @@ A local-only Chrome/Chromium extension for switching between proxy profiles with
 5. Choose the `proxy-switcher/` directory.
 6. Open the extension popup and import a TXT file or paste proxy lines.
 7. Confirm the command at `chrome://extensions/shortcuts`. If Chrome assigns a different shortcut or reports a conflict, click the shortcut field and set `Ctrl+Shift+X` manually.
-8. Press `Ctrl+Shift+X` from any tab, including when the popup is closed or another site is active. After connection, that active tab is automatically refreshed.
+8. Press `Ctrl+Shift+X` from any tab, including when the popup is closed or another site is active. After connection, the selected target tabs are automatically refreshed.
 
 ## Proxy format
 

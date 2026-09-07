@@ -6,12 +6,21 @@ const manager = new ProxyManager();
 let rotateTimeout = null;
 let rotationInProgress = false;
 
-async function reloadActiveTab() {
-  const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  const tab = tabs[0];
-  if (!tab?.id) return;
-  try { await chrome.tabs.reload(tab.id, { bypassCache: false }); }
-  catch (_error) { /* Chrome pages and restricted tabs cannot be reloaded by extensions. */ }
+async function getTargetTabs(state = await manager.getState()) {
+  if (state.targetTabIds?.length) {
+    const tabs = await chrome.tabs.query({});
+    return tabs.filter((tab) => state.targetTabIds.includes(tab.id));
+  }
+  const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  return active ? [active] : [];
+}
+
+async function reloadTargetTabs() {
+  const tabs = await getTargetTabs();
+  await Promise.all(tabs.filter((tab) => tab.id).map(async (tab) => {
+    try { await chrome.tabs.reload(tab.id, { bypassCache: false }); }
+    catch (_error) { /* Chrome pages and restricted tabs cannot be reloaded by extensions. */ }
+  }));
 }
 
 async function rotateOnce() {
@@ -21,7 +30,7 @@ async function rotateOnce() {
   rotationInProgress = true;
   try {
     await manager.switchToNext();
-    await reloadActiveTab();
+    await reloadTargetTabs();
   } catch (error) {
     await patchState({ status: 'ERROR', currentError: error.message || 'CONNECTION FAILED' });
   } finally {
@@ -34,8 +43,8 @@ async function scheduleAfterLoad(tabId) {
   rotateTimeout = setTimeout(async () => {
     rotateTimeout = null;
     const state = await manager.getState();
-    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (state.autoRotate && tabs[0]?.id === tabId) await rotateOnce();
+    const targets = await getTargetTabs(state);
+    if (state.autoRotate && targets.some((tab) => tab.id === tabId)) await rotateOnce();
   }, 1000);
 }
 
@@ -46,7 +55,7 @@ function stopAutoRotate() {
 
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== 'switch-proxy') return;
-  try { await manager.switchToNext(); await reloadActiveTab(); }
+  try { await manager.switchToNext(); await reloadTargetTabs(); }
   catch (error) { await patchState({ status: 'ERROR', currentError: error.message || 'CONNECTION FAILED' }); }
 });
 
@@ -54,8 +63,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (changeInfo.status !== 'complete') return;
   const state = await manager.getState();
   if (!state.autoRotate) return;
-  const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  if (tabs[0]?.id === tabId) await scheduleAfterLoad(tabId);
+  const targets = await getTargetTabs(state);
+  if (targets.some((tab) => tab.id === tabId)) await scheduleAfterLoad(tabId);
 });
 
 chrome.webRequest.onAuthRequired.addListener(
@@ -74,13 +83,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       case 'get-state': return manager.getState();
       case 'connect': {
         const result = await manager.connect(message.index);
-        await reloadActiveTab();
+        await reloadTargetTabs();
         return result;
       }
       case 'disconnect': return manager.disconnect();
       case 'switch-next': {
         const result = await manager.switchToNext();
-        await reloadActiveTab();
+        await reloadTargetTabs();
         return result;
       }
       case 'add-proxies': return manager.addProxies(message.proxies || []);
@@ -91,8 +100,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const next = await patchState(patch);
         if (Object.prototype.hasOwnProperty.call(patch, 'autoRotate')) {
           if (next.autoRotate) {
-            const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-            if (tabs[0]?.id) await scheduleAfterLoad(tabs[0].id);
+            const tabs = await getTargetTabs(next);
+            const readyTab = tabs.find((tab) => tab.status === 'complete');
+            if (readyTab?.id) await scheduleAfterLoad(readyTab.id);
           }
           else stopAutoRotate();
         }
@@ -107,8 +117,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 chrome.runtime.onStartup.addListener(async () => {
   const state = await loadState();
   if (state.autoRotate) {
-    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (tabs[0]?.id && tabs[0].status === 'complete') await scheduleAfterLoad(tabs[0].id);
+    const tabs = await getTargetTabs(state);
+    const readyTab = tabs.find((tab) => tab.status === 'complete');
+    if (readyTab?.id) await scheduleAfterLoad(readyTab.id);
   }
   if (state.autoConnectOnStartup && state.proxies.length && state.currentIndex >= 0) {
     try { await manager.connect(state.currentIndex); }
