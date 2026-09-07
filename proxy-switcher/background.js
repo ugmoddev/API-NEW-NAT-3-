@@ -6,7 +6,8 @@ const manager = new ProxyManager();
 let rotateTimeout = null;
 let rotationInProgress = false;
 
-async function getTargetTabs(state = await manager.getState()) {
+async function getTargetTabs(state) {
+  state = state || await manager.getState();
   if (state.targetTabIds?.length) {
     const tabs = await chrome.tabs.query({});
     return tabs.filter((tab) => state.targetTabIds.includes(tab.id));
