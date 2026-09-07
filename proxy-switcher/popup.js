@@ -8,6 +8,7 @@ const send = (type, payload = {}) => new Promise((resolve, reject) => chrome.run
 }));
 
 let state;
+let selectedFiles = [];
 
 function displayProxy(proxy) {
   if (!proxy) {
@@ -91,11 +92,32 @@ async function importText(text, sourceLabel = '') {
 }
 
 $('#upload-btn').addEventListener('click', () => $('#file-input').click());
+function readFileText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error(`Cannot read ${file.name}`));
+    reader.readAsText(file);
+  });
+}
 $('#file-input').addEventListener('change', async (event) => {
   const files = [...event.target.files];
-  if (files.length) {
-    const contents = await Promise.all(files.map((file) => file.text()));
-    await importText(contents.join('\n'), `${files.length} file${files.length === 1 ? '' : 's'}`);
+  const known = new Set(selectedFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+  selectedFiles.push(...files.filter((file) => {
+    const key = `${file.name}:${file.size}:${file.lastModified}`;
+    if (known.has(key)) return false;
+    known.add(key);
+    return true;
+  }));
+  $('#selected-files').textContent = selectedFiles.length ? `${selectedFiles.length} file${selectedFiles.length === 1 ? '' : 's'} selected: ${selectedFiles.map((file) => file.name).join(', ')}` : '';
+  if (selectedFiles.length) {
+    try {
+      const contents = await Promise.all(selectedFiles.map((file) => readFileText(file)));
+      await importText(contents.join('\n'), `${selectedFiles.length} file${selectedFiles.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      $('#import-feedback').textContent = `Upload failed: ${error.message}`;
+      $('#import-feedback').className = 'feedback bad';
+    }
   }
   event.target.value = '';
 });

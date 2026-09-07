@@ -4,7 +4,7 @@ A local-only Chrome/Chromium extension for switching between proxy profiles with
 
 ## Features
 
-- Import one or multiple `.txt` files at once, or paste multiple proxy profiles. Files are merged into one import batch and duplicate proxies are removed automatically.
+- Import one or multiple `.txt` files at once, or paste multiple proxy profiles. The popup shows the selected filenames and supports choosing more files in subsequent picker actions. Files are merged into one import batch and duplicate proxies are removed automatically.
 - The **Paste proxies** button reads the clipboard and imports its contents directly; manual multiline editing remains available if clipboard access is unavailable.
 - Supports HTTP, HTTPS, SOCKS4, and SOCKS5 profile labels. Chrome's proxy API uses `http` for both HTTP and HTTPS proxy endpoints; the UI preserves the selected profile type and clearly routes SOCKS4/SOCKS5 through their native schemes.
 - Removes blank and duplicate entries.
