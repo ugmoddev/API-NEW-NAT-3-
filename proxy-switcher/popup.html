@@ -22,7 +22,7 @@
 
     <section class="panel import-panel">
       <div class="section-heading"><div><h2>Import proxies</h2><p>One per line: host:port[:user:pass]</p></div><select id="proxy-type" aria-label="Proxy type"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks4">SOCKS4</option><option value="socks5">SOCKS5</option></select></div>
-      <div class="import-actions"><button id="upload-btn" class="button secondary">Upload TXT</button><button id="paste-btn" class="button secondary">Paste proxies</button><input id="file-input" type="file" accept=".txt,text/plain" hidden></div>
+      <div class="import-actions"><button id="upload-btn" class="button secondary">Upload TXT files</button><button id="paste-btn" class="button secondary">Paste proxies</button><input id="file-input" type="file" accept=".txt,text/plain" multiple hidden></div>
       <textarea id="paste-area" class="paste-area hidden" placeholder="127.0.0.1:8080&#10;192.168.1.10:3128:admin:password"></textarea>
       <button id="import-paste-btn" class="button primary hidden">Import pasted proxies</button>
       <p id="import-feedback" class="feedback"></p>

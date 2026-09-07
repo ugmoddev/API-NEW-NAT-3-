@@ -69,7 +69,7 @@ async function renderTargetTabs() {
 async function refresh() { state = await send('get-state'); render(); await renderTargetTabs(); }
 async function run(action) { try { const result = await action(); if (result?.error) throw new Error(result.error); await refresh(); } catch (error) { $('#import-feedback').textContent = error.message; $('#import-feedback').className = 'feedback bad'; await refresh().catch(() => {}); } }
 
-async function importText(text) {
+async function importText(text, sourceLabel = '') {
   const type = $('#proxy-type').value;
   const { proxies: parsed, invalid } = parseProxyText(text, type);
   if (!parsed.length) {
@@ -86,12 +86,19 @@ async function importText(text) {
     return;
   }
   await refresh();
-  $('#import-feedback').textContent = `${parsed.length} proxy${parsed.length === 1 ? '' : 'ies'} imported${invalid.length ? ` · skipped ${invalid.length} invalid` : ''}.`;
+  $('#import-feedback').textContent = `${parsed.length} proxy${parsed.length === 1 ? '' : 'ies'} imported${sourceLabel ? ` from ${sourceLabel}` : ''}${invalid.length ? ` · skipped ${invalid.length} invalid` : ''}.`;
   $('#import-feedback').className = 'feedback';
 }
 
 $('#upload-btn').addEventListener('click', () => $('#file-input').click());
-$('#file-input').addEventListener('change', async (event) => { const file = event.target.files[0]; if (file) await importText(await file.text()); event.target.value = ''; });
+$('#file-input').addEventListener('change', async (event) => {
+  const files = [...event.target.files];
+  if (files.length) {
+    const contents = await Promise.all(files.map((file) => file.text()));
+    await importText(contents.join('\n'), `${files.length} file${files.length === 1 ? '' : 's'}`);
+  }
+  event.target.value = '';
+});
 $('#paste-btn').addEventListener('click', async () => {
   $('#paste-area').classList.remove('hidden');
   $('#import-paste-btn').classList.remove('hidden');
